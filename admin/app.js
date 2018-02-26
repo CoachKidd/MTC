@@ -238,6 +238,14 @@ app.use(function (req, res, next) {
   next()
 })
 
+if (config.Logging.StackTraceCountEnabled) {
+  winston.info('**** enabling stack trace parser ****')
+  const traceParser = require('./lib/trace-parser')
+  app.use((req, res, next) => {
+    traceParser.trace(req, res, next)
+  })
+}
+
 app.use('/', index)
 app.use('/test-developer', testDeveloper)
 app.use('/service-manager', serviceManager)
@@ -255,16 +263,6 @@ app.use(function (req, res, next) {
   err.status = 404
   next(err)
 })
-
-console.log('stack trace enabled:', config.Logging.StackTraceCountEnabled)
-
-if (config.Logging.StackTrackCountEnabled === true) {
-  console.log('enabling stack trace parser')
-  const traceParser = require('./lib/trace-parser')
-  app.use((req, res, next) => {
-    traceParser.trace(req, res, next)
-  })
-}
 
 // error handler
 app.use(function (err, req, res, next) {
