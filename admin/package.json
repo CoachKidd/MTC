@@ -61,6 +61,7 @@
     "ramda": "^0.25.0",
     "random-number-csprng": "^1.0.2",
     "serve-favicon": "^2.4.5",
+    "stack-trace": "^0.0.10",
     "tedious": "2.2.4",
     "tedious-connection-pool": "^1.0.5",
     "to-bool": "^0.0.1",

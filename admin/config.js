@@ -64,7 +64,8 @@ module.exports = {
     },
     Express: {
       UseWinston: process.env.EXPRESS_LOGGING_WINSTON || false
-    }
+    },
+    StackTraceCountEnabled: process.env.hasOwnProperty('STACK_TRACE_COUNT_ENABLED') ? toBool(process.env.STACK_TRACE_COUNT_ENABLED) : false
   },
   OverridePinExpiry: process.env.hasOwnProperty('OVERRIDE_PIN_EXPIRY') ? toBool(process.env.OVERRIDE_PIN_EXPIRY) : false,
   Certificates: {
