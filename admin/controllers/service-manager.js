@@ -322,7 +322,16 @@ const saveCheckWindows = async (req, res, next) => {
   checkWindow.checkEndDate = dateService.formatDateFromRequest(req.body, 'checkEndDay', 'checkEndMonth', 'checkEndYear')
   // Ensure check end date time is set to the last minute of the particular day
   checkWindow.checkEndDate.set({ hour: 23, minute: 59, second: 59 })
-
+  // Remove potential timezone offset
+  if (checkWindow.adminStartDate.toDate().getTimezoneOffset() === -60) {
+    checkWindow.adminStartDate.subtract(1, 'hour')
+  }
+  if (checkWindow.checkStartDate.toDate().getTimezoneOffset() === -60) {
+    checkWindow.checkStartDate.subtract(1, 'hour')
+  }
+  if (checkWindow.checkEndDate.toDate().getTimezoneOffset() === -60) {
+    checkWindow.checkEndDate.subtract(1, 'hour')
+  }
   // Auditing? Question for BAs.
 
   try {
