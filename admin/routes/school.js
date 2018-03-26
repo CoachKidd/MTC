@@ -1,7 +1,7 @@
 const rolesConfig = require('../roles-config')
 const isAuthenticated = require('../authentication/middleware')
 
-const { getHome,
+const { getSchoolLandingPage,
   getPupils,
   getResults,
   downloadResults,
@@ -10,13 +10,12 @@ const { getHome,
   getDeclarationForm,
   postDeclarationForm,
   getHDFSubmitted } = require('../controllers/school')
-const group = require('../controllers/group.js')
 
 const school = (router) => {
   router.get(
     '/school-home',
     isAuthenticated(rolesConfig.ROLE_TEACHER),
-    (req, res, next) => getHome(req, res, next)
+    (req, res, next) => getSchoolLandingPage(req, res, next)
   )
   router.get(
     '/pupil-register/:sortField/:sortDirection',
@@ -57,36 +56,6 @@ const school = (router) => {
     '/declaration-form-submitted',
     isAuthenticated(rolesConfig.ROLE_TEACHER),
     (req, res, next) => getHDFSubmitted(req, res, next)
-  )
-  router.get(
-    '/group-pupils',
-    isAuthenticated(rolesConfig.ROLE_TEACHER),
-    (req, res, next) => group.groupPupilsPage(req, res, next)
-  )
-  router.get(
-    '/group-pupils/add',
-    isAuthenticated(rolesConfig.ROLE_TEACHER),
-    (req, res, next) => group.manageGroupPage(req, res, next)
-  )
-  router.get(
-    '/group-pupils/edit/:groupId',
-    isAuthenticated(rolesConfig.ROLE_TEACHER),
-    (req, res, next) => group.manageGroupPage(req, res, next)
-  )
-  router.post(
-    '/group-pupils/add',
-    isAuthenticated(rolesConfig.ROLE_TEACHER),
-    (req, res, next) => group.addGroup(req, res, next)
-  )
-  router.post(
-    '/group-pupils/edit',
-    isAuthenticated(rolesConfig.ROLE_TEACHER),
-    (req, res, next) => group.editGroup(req, res, next)
-  )
-  router.get(
-    '/group-pupils/delete/:groupId',
-    isAuthenticated(rolesConfig.ROLE_TEACHER),
-    (req, res, next) => group.removeGroup(req, res, next)
   )
 }
 

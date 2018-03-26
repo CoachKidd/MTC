@@ -37,7 +37,7 @@
 
         <div class="button-wrapper">
             <% if (isFeatureEnabled('groupCreate')) { %>
-            <a class="button button-primary" href="/school/group-pupils/add">Create new group</a>
+            <a class="button button-primary" href="/group/pupils-list/add">Create new group</a>
             <% } else { %>
             <a class="button button-secondary disabled-link" href="#">Create new group</a>
             <% } %>
@@ -60,7 +60,7 @@
                             <a name="group-<%= group.id %>"></a>
                             <strong>
                                 <% if (isFeatureEnabled('groupEdit')) { %>
-                                    <a href="/school/group-pupils/edit/<%= group.id %>"><%= group.name %></a>
+                                    <a href="/group/pupils-list/edit/<%= group.id %>"><%= group.name %></a>
                                 <% } else { %>
                                     <span><%= group.name %></span>
                                 <% } %>
@@ -69,7 +69,7 @@
                         </td>
                         <td class="align-right">
                             <% if (isFeatureEnabled('groupRemove')) { %>
-                            <a href="/school/group-pupils/delete/<%= group.id %>" class="modal-link font-xsmall" id="js-modal-link">Remove</a>
+                            <a href="/group/pupils-list/delete/<%= group.id %>" class="modal-link font-xsmall" id="js-modal-link">Remove</a>
                             <% } else { %>
                             <span class="font-greyed-out font-xsmall">Remove</span>
                             <% } %>
@@ -106,7 +106,7 @@
     modalTitle: 'Remove group',
     modalText: 'Are you sure you want to remove this?',
     modalConfirmationLabel: 'Yes',
-    modalConfirmationUrl: '/school/group-pupils/delete',
+    modalConfirmationUrl: '/group/pupils-list/delete',
     modalCancelLabel: 'No',
     modalCancelUrl: '#'
 }) %>
