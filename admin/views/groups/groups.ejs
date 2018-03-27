@@ -34,7 +34,6 @@
             Organise pupils into groups if you are planning to administer the check to smaller cohorts.
         </p>
 
-
         <div class="button-wrapper">
             <% if (isFeatureEnabled('groupCreate')) { %>
             <a class="button button-primary" href="/group/pupils-list/add">Create new group</a>
@@ -42,7 +41,6 @@
             <a class="button button-secondary disabled-link" href="#">Create new group</a>
             <% } %>
         </div>
-
 
         <% if (Array.isArray(groups) && groups.length > 0) { %>
         <div class="group">
@@ -69,9 +67,9 @@
                         </td>
                         <td class="align-right">
                             <% if (isFeatureEnabled('groupRemove')) { %>
-                            <a href="/group/pupils-list/delete/<%= group.id %>" class="modal-link font-xsmall" id="js-modal-link">Remove</a>
+                            <a href="/group/pupils-list/delete/<%= group.id %>" class="modal-link font-small" id="js-modal-link">Remove</a>
                             <% } else { %>
-                            <span class="font-greyed-out font-xsmall">Remove</span>
+                            <span class="font-greyed-out font-small">Remove</span>
                             <% } %>
                         </td>
                     </tr>
@@ -83,6 +81,7 @@
         <div class="top-padding-30">No groups available.</div>
         <% } %>
     </div>
+
     <div class="column-one-third sidebar" aria-label="sidebar">
         <aside role="complementary" class="support-column">
             <h3 class="heading-medium">Related</h3>
