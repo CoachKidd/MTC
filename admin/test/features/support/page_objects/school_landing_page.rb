@@ -22,12 +22,9 @@ class SchoolLandingPage < SitePrism::Page
   element :hdf_disabled_text, 'p', text: "Complete the headteacher's declaration form after you have submitted your pupil register"
   element :results, '.disabled-link', text: 'Results'
   element :results_text, 'p', text: "View pupil results"
-
   element :teacher_name, '.signed-in-as'
   section :phase_banner, PhaseBanner, '.phase-banner'
-
   element :sign_out, 'a[href="/sign-out"]', text: 'Sign out'
-
   element :related, '#content h3'
   element :guidance, 'aside.support-column nav li a', text: 'Guidance'
 
