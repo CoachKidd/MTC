@@ -81,5 +81,8 @@ module.exports = {
     }
   },
   Environment: getEnvironment(),
-  AssetPath: process.env.ASSET_PATH || '/'
+  AssetPath: process.env.ASSET_PATH || '/',
+  Csp: {
+    ReportUri: process.env.CSP_REPORT_URI
+  }
 }

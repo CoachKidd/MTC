@@ -132,7 +132,7 @@ if (config.Logging.Express.UseWinston === 'true') {
 
 app.use(cors())
 app.use(helmet())
-const scriptSources = ["'self'", "'unsafe-inline'", 'https://www.google-analytics.com']
+const scriptSources = ["'self'", "'unsafe-inline'", 'https://www.google-analytics.comx']
 const styleSources = ["'self'", "'unsafe-inline'"]
 const imgSources = ["'self'", 'https://www.google-analytics.com', 'data:']
 const objectSources = ["'self'"]
@@ -144,7 +144,8 @@ if (config.AssetPath !== '/') {
   imgSources.push(config.AssetPath)
   objectSources.push(config.AssetPath)
 }
-app.use(helmet.contentSecurityPolicy({
+
+const cspConfig = {
   directives: {
     defaultSrc: ["'self'"],
     scriptSrc: scriptSources,
@@ -156,7 +157,12 @@ app.use(helmet.contentSecurityPolicy({
     mediaSrc: ["'none'"],
     childSrc: ["'none'"]
   }
-}))
+}
+if (config.Csp.ReportUri) {
+  winston.info('adding CSP report URL:' + config.Csp.ReportUri)
+  cspConfig.reportUri = config.Csp.ReportUri
+}
+app.use(helmet.contentSecurityPolicy(cspConfig))
 
 // Sets request header "Strict-Transport-Security: max-age=31536000; includeSubDomains".
 const oneYearInSeconds = 31536000
