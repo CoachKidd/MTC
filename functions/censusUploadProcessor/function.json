@@ -1,0 +1,19 @@
+{
+  "disabled": false,
+  "bindings": [
+    {
+      "name": "censusFile",
+      "type": "blobTrigger",
+      "direction": "in",
+      "path": "censusupload/{name}.csv",
+      "connection": "InboundStorageAccount"
+    },
+    {
+      "tableName": "censusImport",
+      "connection": "OutboundStorageAccount",
+      "name": "outputTable",
+      "type": "table",
+      "direction": "out"
+    }
+  ]
+}
