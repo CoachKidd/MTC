@@ -92,6 +92,9 @@ export class QuestionComponent extends PracticeQuestionComponent implements OnIn
       case 'Del':
         this.deleteChar();
         break;
+      case 'Tab':
+        this.repeatQuestion();
+        break;
       case 'Enter':
         this.onSubmit();
         break;
