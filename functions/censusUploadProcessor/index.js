@@ -1,6 +1,7 @@
 'use strict'
 
 const uuid = require('uuid/v4')
+const tedious = require('tedious')
 
 module.exports = function (context, censusFile) {
   context.log('JavaScript blob trigger function processed blob \n Name:',
