@@ -135,6 +135,13 @@ class SqlDbHelper
     chk_window_res
   end
 
+  def self.update_check_window_start_date_to_past(name)
+    check_window = check_window_details(name)
+    sql = "UPDATE [mtc_admin].[checkWindow] set checkStartDate='2018-05-21 00:00:00 +01:00' WHERE id=#{check_window['id']};"
+    result = SQL_CLIENT.execute(sql)
+    result.do
+  end
+
   def self.check_windows
     check_window_result = []
     sql = "SELECT * FROM [mtc_admin].[checkWindow]"
@@ -169,7 +176,7 @@ class SqlDbHelper
   end
 
   def self.get_attendance_code_for_a_pupil(pupil_id)
-    sql = "SELECT * FROM [mtc_admin].[pupilAttendance] WHERE pupil_id = '#{pupil_id}'"
+    sql = "SELECT * FROM [mtc_admin].[pupilAttendance] WHERE pupil_id = '#{pupil_id}' and isDeleted = 'false'"
     result = SQL_CLIENT.execute(sql)
     pupil_att_code_res = result.first
     result.cancel

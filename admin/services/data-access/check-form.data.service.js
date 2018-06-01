@@ -6,7 +6,7 @@ const sqlService = require('./sql.service')
 const table = '[checkForm]'
 
 const checkFormDataService = {
-    /**
+  /**
    * Get active forms
    * This will be deprecated when the form choice algorithm is introduced
    * @param id
@@ -60,23 +60,28 @@ const checkFormDataService = {
     const params = []
     let sql = ''
     if (windowId) {
+      // Note: we should not be able to unassign forms from a currently running check window
+      // Here we calculate it on the fly from the database.
       sql = `
-      SELECT * 
-      FROM ${sqlService.adminSchema}.[checkForm] 
-      WHERE isDeleted=0 
-      AND [id] IN (
-        SELECT checkForm_id 
-        FROM checkFormWindow 
-        WHERE checkWindow_id=@windowId
-      )
-      ORDER BY [name] ${sortOrder}`
+      SELECT
+        cf.*,
+      IIF(cw.checkStartDate > SYSDATETIMEOFFSET(), /* TRUE */ cast(1 as bit) , /* FALSE */ cast(0 as bit)) as guiCanUnassign
+      FROM ${sqlService.adminSchema}.[checkForm] cf
+      LEFT JOIN ${sqlService.adminSchema}.[checkFormWindow] cfw ON (cf.id = cfw.checkForm_id)
+      LEFT JOIN ${sqlService.adminSchema}.[checkWindow] cw ON (cfw.checkWindow_id = cw.id)
+      WHERE cf.isDeleted = 0
+      AND cw.id = @windowId   
+      ORDER BY cf.name ASC`
+
       params.push({
         name: 'windowId',
         value: windowId,
         type: TYPES.Int
       })
     } else {
-      sql = `SELECT * FROM ${sqlService.adminSchema}.[checkForm] WHERE isDeleted=0 ORDER BY [name] ${sortOrder}`
+      sql = `SELECT * FROM ${sqlService.adminSchema}.[checkForm] 
+             WHERE isDeleted=0 
+             ORDER BY [name] ${sortOrder}`
     }
     return sqlService.query(sql, params)
   },
@@ -93,7 +98,7 @@ const checkFormDataService = {
     return sqlService.query(sql, params)
   },
 
-    /**
+  /**
    * Fetch active forms (not deleted)
    * sorted by window
    * @returns {Promise<*>}
@@ -128,7 +133,7 @@ const checkFormDataService = {
     }
     return sqlService.query(sql, params)
   },
-    /**
+  /**
    * Create check form
    * @param checkForm
    * @returns {Promise<*>}
@@ -136,7 +141,7 @@ const checkFormDataService = {
   sqlCreate: (checkForm) => {
     return sqlService.create('[checkForm]', checkForm)
   },
-    /**
+  /**
    * Find check form by name.
    * @param formName
    * @returns {Promise|*}
