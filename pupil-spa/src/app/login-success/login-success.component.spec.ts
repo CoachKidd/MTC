@@ -1,5 +1,6 @@
 import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
+import { HttpModule } from '@angular/http';
 
 import { DeviceService } from '../services/device/device.service';
 import { LoginSuccessComponent } from './login-success.component';
@@ -10,13 +11,17 @@ import { SpeechService } from '../services/speech/speech.service';
 import { SpeechServiceMock } from '../services/speech/speech.service.mock';
 import { QuestionService } from '../services/question/question.service';
 import { QuestionServiceMock } from '../services/question/question.service.mock';
+import { UserService } from '../services/user/user.service';
 import { AuditService } from '../services/audit/audit.service';
+import { AppUsageService } from '../services/app-usage/app-usage.service';
 
 describe('LoginSuccessComponent', () => {
   let component: LoginSuccessComponent;
   let fixture: ComponentFixture<LoginSuccessComponent>;
   let store: {};
   let mockRouter;
+  let appUsageService;
+  let storageService;
 
   beforeEach(() => {
     mockRouter = {
@@ -24,6 +29,7 @@ describe('LoginSuccessComponent', () => {
     };
 
     const injector = TestBed.configureTestingModule({
+      imports: [HttpModule],
       declarations: [LoginSuccessComponent],
       providers: [
         DeviceService,
@@ -31,11 +37,14 @@ describe('LoginSuccessComponent', () => {
         StorageService,
         { provide: SpeechService, useClass: SpeechServiceMock },
         { provide: QuestionService, useClass: QuestionServiceMock },
+        UserService,
         AuditService,
-        WindowRefService
+        WindowRefService,
+        AppUsageService
       ]
     });
-    const storageService = injector.get(StorageService);
+    storageService = injector.get(StorageService);
+    appUsageService = injector.get(AppUsageService);
     injector.compileComponents();
 
     store = {};
@@ -49,6 +58,7 @@ describe('LoginSuccessComponent', () => {
     spyOn(storageService, 'clear').and.callFake(function () {
       store = {};
     });
+    spyOn(appUsageService, 'increment');
   });
 
   beforeEach(() => {
@@ -59,6 +69,7 @@ describe('LoginSuccessComponent', () => {
 
   it('should be created', () => {
     expect(component).toBeTruthy();
+    expect(appUsageService.increment).toHaveBeenCalledTimes(1);
   });
 
   it('asks the user to confirm their details', () => {
@@ -66,9 +77,10 @@ describe('LoginSuccessComponent', () => {
     expect(compiled.querySelector('p.lede').textContent).toMatch(/Check your details are correct/);
   });
 
-  it('redirects to warm up introduction page', () => {
+  it('redirects to warm up introduction page and removes pupil data', () => {
     component.onClick();
     expect(mockRouter.navigate).toHaveBeenCalledWith(['check-start']);
+    expect(storageService.setItem).toHaveBeenCalledTimes(1);
   });
 
 });
