@@ -15,7 +15,7 @@ const pupilDataService = require('../../services/data-access/pupil.data.service'
 
 const checkWindowMock = require('../mocks/check-window-2')
 const checkFormMock = {
-  id: 100,
+  id: 3,
   name: 'MTC0100',
   isDeleted: false,
   formData: '[ { "f1" : 2, "f2" : 5},{"f1" : 11,"f2" : 2    }]'
@@ -166,16 +166,22 @@ describe('check-start.service', () => {
       expect(checkFormDataService.sqlGetActiveForm).toHaveBeenCalled()
     })
 
-    it('gets a different CheckForm when the current one was assigned but not used', async () => {
-      spyOn(checkDataService, 'sqlFindOneForPupilLogin').and.returnValue(preparedCheckMockLoggedIn)
-      spyOn(checkFormService, 'getAllFormsForCheckWindow').and.returnValue(Promise.resolve([1, 2, 3]))
-      spyOn(checkFormService, 'allocateCheckForm').and.returnValue(checkFormMock)
+    it('gets the next unused global CheckForm when the current one was assigned but not used', async () => {
+      spyOn(checkDataService, 'sqlFindOneForPupilLogin').and.returnValue({
+        ...preparedCheckMockLoggedIn,
+        seenCheckForm_ids: '1,3'
+      })
+      spyOn(checkFormDataService, 'sqlGetActiveForm').and.returnValue([checkFormMock])
+      spyOn(checkFormService, 'getAllFormsForCheckWindow').and.returnValue(Promise.resolve([
+        { id: 1, formData: '11' },
+        { id: 2, formData: '22' },
+        { id: 3, formData: '33' }
+      ]))
       spyOn(checkDataService, 'sqlUpdate')
-      await service.pupilLogin(1)
+      const login = await service.pupilLogin(1)
       expect(checkFormService.getAllFormsForCheckWindow).toHaveBeenCalledWith(2)
       expect(checkFormService.getAllFormsForCheckWindow).toHaveBeenCalledTimes(1)
-      expect(checkFormService.allocateCheckForm).toHaveBeenCalledWith([1, 2, 3], [3])
-      expect(checkFormService.allocateCheckForm).toHaveBeenCalledTimes(1)
+      expect(login.questions).toBe(22)
     })
 
     it('resets used CheckForms after all CheckForms were allocated for a pupil but not used', async () => {
@@ -183,14 +189,17 @@ describe('check-start.service', () => {
         ...preparedCheckMockLoggedIn,
         seenCheckForm_ids: '1,2,3'
       })
-      spyOn(checkFormService, 'getAllFormsForCheckWindow').and.returnValue(Promise.resolve([1, 2, 3]))
-      spyOn(checkFormService, 'allocateCheckForm').and.returnValue(checkFormMock)
+      spyOn(checkFormDataService, 'sqlGetActiveForm').and.returnValue([checkFormMock])
+      spyOn(checkFormService, 'getAllFormsForCheckWindow').and.returnValue(Promise.resolve([
+        { id: 1, formData: '11' },
+        { id: 2, formData: '22' },
+        { id: 3, formData: '33' }
+      ]))
       spyOn(checkDataService, 'sqlUpdate')
-      await service.pupilLogin(1)
+      const login = await service.pupilLogin(1)
       expect(checkFormService.getAllFormsForCheckWindow).toHaveBeenCalledWith(2)
       expect(checkFormService.getAllFormsForCheckWindow).toHaveBeenCalledTimes(1)
-      expect(checkFormService.allocateCheckForm).toHaveBeenCalledWith([1, 2, 3], [])
-      expect(checkFormService.allocateCheckForm).toHaveBeenCalledTimes(1)
+      expect(login.questions).toBe(11)
     })
 
     it('throws an error if the check form is not found', async () => {

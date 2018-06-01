@@ -100,23 +100,35 @@ checkStartService.pupilLogin = async function (pupilId) {
   }
 
   let checkForm = null
-  let checkForms = []
+  let seenCheckFormIds = []
+
+  const res = await checkFormDataService.sqlGetActiveForm(check.checkForm_id)
+  checkForm = res ? R.head(res) : null
 
   // If they have not logged in before, then give selected form.
-  if (check.pupilLoginDate === null) {
-    const res = await checkFormDataService.sqlGetActiveForm(check.checkForm_id)
-
-    checkForm = res ? R.head(res) : null
-  } else {
-    // Edge case, when they have logged in before but did not send completed test
+  // Else, edge case, when they have logged in before but did not send completed test,
+  // get the next available form globally, reset when they have seen all CheckForms
+  if (check.pupilLoginDate !== null) {
     const allForms = await checkFormService.getAllFormsForCheckWindow(check.checkWindow_id)
+    seenCheckFormIds = JSON.parse(`[${check.seenCheckForm_ids || ''}]`)
 
-    checkForms = JSON.parse(`[${check.seenCheckForm_ids || ''}]`)
+    let unseenForms = allForms.filter(f => !seenCheckFormIds.includes(f.id))
 
     // If a pupil has seen all the checkForms, then we need to empty the array
-    if (checkForms.length === allForms.length) checkForms = []
+    if (unseenForms.length === 0) {
+      seenCheckFormIds = []
+      unseenForms = allForms
+    }
 
-    checkForm = await checkFormService.allocateCheckForm(allForms, checkForms)
+    // find next form globally available, default to the first one if there is none
+    const previousCheckFormId = checkForm
+        ? checkForm.id
+        : 0
+
+    let nextIdx = unseenForms.findIndex(f => f.id > previousCheckFormId)
+    if (nextIdx === -1) nextIdx = 0
+
+    checkForm = unseenForms[nextIdx]
   }
 
   if (!checkForm) {
@@ -126,7 +138,7 @@ checkStartService.pupilLogin = async function (pupilId) {
     id: check.id,
     checkForm_id: checkForm.id,
     pupilLoginDate: moment.utc(),
-    seenCheckForm_ids: R.append(checkForm.id, checkForms)
+    seenCheckForm_ids: R.append(checkForm.id, seenCheckFormIds)
   }
 
   await checkDataService.sqlUpdate(checkData)
