@@ -67,7 +67,9 @@ export class SpokenPracticeQuestionComponent extends PracticeQuestionComponent i
    * Hook that runs before the timeout event (sent when the timer reaches 0 seconds)
    */
   preSendTimeoutEvent() {
-    this.soundComponent.playEndOfQuestionSound();
+    this.speechService.waitForEndOfSpeech().then(() => {
+      this.soundComponent.playEndOfQuestionSound();
+    });
   }
 
   /**
