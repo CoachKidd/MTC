@@ -140,11 +140,11 @@ export class SpeechService implements OnDestroy {
   }
 
   /**
-   * Add a utterance to the underlying webspeech api
+   * Add an single character utterance to the underlying webspeech api
    * Don't cancel speech, let it queue inside synth
    * @param utterance
    */
-  speakQueued(utterance: string): void {
+  speakChar(utterance: string): void {
     this.speak(utterance, false);
   }
 
