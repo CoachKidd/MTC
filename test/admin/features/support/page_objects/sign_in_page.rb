@@ -7,6 +7,7 @@ class SignInPage < SitePrism::Page
   element :password_field, '#password'
   element :sign_in, 'input[value="Sign in"]'
   element :contact, "a[href='/contact']"
+  element :privacy, "a[href='/privacy']"
   section :phase_banner, PhaseBanner, '.phase-banner'
 
 
