@@ -1,28 +1,9 @@
 'use strict'
 
-const Group = require('../../models/group')
 const groupDataService = {}
 const sqlService = require('./sql.service')
 const TYPES = require('tedious').TYPES
 const R = require('ramda')
-
-/**
- * Get groups filtered by query.
- * @deprecated use sqlFindGroups
- * @param query
- * @returns {Promise<Promise|*>}
- */
-groupDataService.getGroups = async function (query) {
-  const q = query || {}
-  q.isDeleted = false
-  return Group
-    .find(q)
-    // @TODO: Collation won't work in Cosmos - This when migrating to SQL.
-    // .collation({ locale: 'en', strength: 2 })
-    .sort({ name: 'asc' })
-    .lean()
-    .exec()
-}
 
 /**
  * Get active groups (non-soft-deleted).
@@ -46,16 +27,6 @@ groupDataService.sqlFindGroups = async (schoolId) => {
     }
   ]
   return sqlService.query(sql, params)
-}
-
-/**
- * Get group document by _id.
- * @deprecated use sqlFindGroup
- * @param query
- * @returns {Promise<*>}
- */
-groupDataService.getGroup = async function (query) {
-  return Group.findOne(query).lean().exec()
 }
 
 /**
@@ -117,50 +88,12 @@ groupDataService.sqlFindOneByName = async (groupName, schoolId) => {
 }
 
 /**
- * Save group.
- * @deprecated use sqlCreate
- * @param data
- * @returns {Promise<*>}
- */
-groupDataService.create = async function (data) {
-  const group = new Group(data)
-  await group.save()
-  return group.toObject()
-}
-
-/**
  * Create 'group' record.
  * @param group
  * @returns {Promise}
  */
 groupDataService.sqlCreate = (group) => {
   return sqlService.create('[group]', group)
-}
-
-/**
- * Update 'group' record.
- * @deprecated use sqlUpdate
- * @param id
- * @param data
- * @returns {Promise<void>}
- */
-groupDataService.update = async function (id, data) {
-  return new Promise((resolve, reject) => {
-    Group.findByIdAndUpdate(
-      id,
-      {
-        '$set': {
-          'name': data.name,
-          'pupils': data.pupils
-        }
-      }, function (error) {
-        if (error) {
-          return reject(error)
-        }
-      }
-    )
-    return resolve(data)
-  })
 }
 
 /**
@@ -268,19 +201,9 @@ groupDataService.sqlFindPupils = async (schoolId, groupId) => {
     sql += ` OR g.group_id=@groupId`
   }
 
-  sql += ') ORDER BY lastName ASC, foreName ASC'
+  sql += ') ORDER BY group_id DESC, lastName ASC, foreName ASC, middleNames ASC, dateOfBirth ASC'
 
   return sqlService.query(sql, params)
-}
-
-/**
- * Soft-deletes a group.
- * @deprecated use sqlMarkGroupAsDeleted
- * @param id
- * @returns {Promise<void>}
- */
-groupDataService.delete = async function (id) {
-  return Group.updateOne({'_id': id}, {$set: {'isDeleted': true}}).exec()
 }
 
 /**
@@ -325,9 +248,33 @@ groupDataService.sqlFindGroupsByIds = async (schoolId, pupilIds) => {
     type: TYPES.Int
   })
 
-  const whereClause = `WHERE g.isDeleted = 0 AND school_id=@schoolId AND pupil_id IN (${paramIdentifiers.join(', ')})`
+  const whereClause = `WHERE g.isDeleted = 0 AND school_id=@schoolId AND pupil_id IN (${paramIdentifiers.join(', ')}) ORDER BY g.name ASC`
   const sql = [sqlInit, whereClause].join(' ')
   return sqlService.query(sql, params)
+}
+
+/**
+ * Find group by pupil id
+ * @param pupilId
+ * @return {Object}
+ */
+groupDataService.sqlFindOneGroupByPupilId = async (pupilId) => {
+  if (!pupilId) return false
+
+  const sql = `SELECT * FROM mtc_admin.[group] g
+  INNER JOIN mtc_admin.pupilGroup pg ON g.id = pg.group_id
+  WHERE pg.pupil_id = @pupilId AND g.isDeleted = 0`
+
+  const params = [
+    {
+      name: 'pupilId',
+      value: pupilId,
+      type: TYPES.Int
+    }
+  ]
+
+  const result = await sqlService.query(sql, params)
+  return R.head(result)
 }
 
 module.exports = groupDataService

@@ -1,7 +1,16 @@
 import { Component, OnInit, AfterViewInit, Input, Output, EventEmitter, HostListener } from '@angular/core';
+
 import { AuditService } from '../services/audit/audit.service';
-import { QuestionRendered, QuestionAnswered } from '../services/audit/auditEntry';
+import {
+  QuestionRendered,
+  QuestionAnswered,
+  QuestionTimerStarted,
+  QuestionTimerEnded,
+  QuestionTimerCancelled
+} from '../services/audit/auditEntry';
 import { WindowRefService } from '../services/window-ref/window-ref.service';
+import { SpeechService } from '../services/speech/speech.service';
+import { QuestionService } from '../services/question/question.service';
 
 @Component({
   selector: 'app-practice-question',
@@ -64,6 +73,12 @@ export class PracticeQuestionComponent implements OnInit, AfterViewInit {
 
   @Input() public factor2 = 0;
 
+  /**
+   * The practise question number
+   * @type {number}
+   */
+  @Input() public sequenceNumber = 0;
+
   @Input() public questionTimeoutSecs;
 
   @Output() public manualSubmitEvent: EventEmitter<any> = new EventEmitter();
@@ -71,7 +86,9 @@ export class PracticeQuestionComponent implements OnInit, AfterViewInit {
   @Output() public timeoutEvent: EventEmitter<any> = new EventEmitter();
 
   constructor(protected auditService: AuditService,
-              protected windowRefService: WindowRefService) {
+              protected windowRefService: WindowRefService,
+              protected questionService: QuestionService,
+              protected speechService: SpeechService) {
     this.window = windowRefService.nativeWindow;
   }
 
@@ -84,19 +101,40 @@ export class PracticeQuestionComponent implements OnInit, AfterViewInit {
    * Start the timer when the view is ready.
    */
   ngAfterViewInit() {
-    this.auditService.addEntry(new QuestionRendered());
+    this.auditService.addEntry(new QuestionRendered({
+      practiseSequenceNumber: this.sequenceNumber,
+      question: `${this.factor1}x${this.factor2}`
+    }));
     // Start the countdown and page timeout timers
     this.startTimer();
+  }
+
+  /**
+   * Hook that runs before the timeout event (sent when the timer reaches 0 seconds)
+   */
+  preSendTimeoutEvent() {
+  }
+
+  /**
+   * Hook that is called each time the countdown timer is called.  Roughly every 100 ms.
+   * @param remainingTime
+   */
+  countdownIntervalHook(remainingTime) {
   }
 
   /**
    * Start the countdown timer on the page and set the time-out counter
    */
   startTimer() {
+    this.auditService.addEntry(new QuestionTimerStarted({
+      sequenceNumber: this.sequenceNumber,
+      question: `${this.factor1}x${this.factor2}`
+    }));
     this.stopTime = (new Date().getTime() + (this.questionTimeoutSecs * 1000));
 
     // Set the amount of time the user can have on the question
     this.timeout = this.window.setTimeout(() => {
+      this.preSendTimeoutEvent();
       this.sendTimeoutEvent();
     }, this.questionTimeoutSecs * 1000);
 
@@ -108,6 +146,7 @@ export class PracticeQuestionComponent implements OnInit, AfterViewInit {
         timeLeft = 0;
       }
       this.remainingTime = Math.ceil(timeLeft);
+      this.countdownIntervalHook(this.remainingTime);
     }, 100);
   }
 
@@ -158,17 +197,37 @@ export class PracticeQuestionComponent implements OnInit, AfterViewInit {
     if (this.timeout) {
       // console.log(`Clearing timeout: ${this.timeout}`);
       clearTimeout(this.timeout);
+    } else {
+      // timeout didn't start so nothing to submit
+      return false;
     }
+
     // Clear the interval timer
     if (this.countdownInterval) {
+      this.auditService.addEntry(new QuestionTimerCancelled({
+        sequenceNumber: this.sequenceNumber,
+        question: `${this.factor1}x${this.factor2}`
+      }));
       clearInterval(this.countdownInterval);
     }
 
-    // console.log(`submitting answer ${this.answer}`);
-    this.auditService.addEntry(new QuestionAnswered());
-    this.manualSubmitEvent.emit(this.answer);
+    this.addQuestionAnsweredEvent();
     this.submitted = true;
+    if (this.questionService.getConfig().speechSynthesis) {
+      this.speechService.waitForEndOfSpeech().then(() => {
+        this.manualSubmitEvent.emit(this.answer);
+      });
+    } else {
+      this.manualSubmitEvent.emit(this.answer);
+    }
     return true;
+  }
+
+  addQuestionAnsweredEvent() {
+    this.auditService.addEntry(new QuestionAnswered({
+      practiseSequenceNumber: this.sequenceNumber,
+      question: `${this.factor1}x${this.factor2}`
+    }));
   }
 
   /**
@@ -183,8 +242,18 @@ export class PracticeQuestionComponent implements OnInit, AfterViewInit {
       return false;
     }
     // console.log(`practice-question.component: sendTimeoutEvent(): ${this.answer}`);
-    this.timeoutEvent.emit(this.answer);
+    this.auditService.addEntry(new QuestionTimerEnded({
+      sequenceNumber: this.sequenceNumber,
+      question: `${this.factor1}x${this.factor2}`
+    }));
     this.submitted = true;
+    if (this.questionService.getConfig().speechSynthesis) {
+      this.speechService.waitForEndOfSpeech().then(() => {
+        this.timeoutEvent.emit(this.answer);
+      });
+    } else {
+      this.timeoutEvent.emit(this.answer);
+    }
   }
 
   /**
@@ -192,16 +261,32 @@ export class PracticeQuestionComponent implements OnInit, AfterViewInit {
    * @param {string} char
    */
   addChar(char: string) {
+    if (this.submitted) {
+        return;
+    }
     // console.log(`addChar() called with ${char}`);
     if (this.answer.length < 5) {
+      if (this.questionService.getConfig().speechSynthesis) {
+        // if user input interrupts the question being read out, start the timer
+        if (!this.timeout) {
+          this.startTimer();
+        }
+        this.speechService.speakChar(char);
+      }
+
       this.answer = this.answer.concat(char);
     }
   }
 
   /**
    * Delete a character from the end of the answer if there is one
+   * Return early and do nothing if the timer is up
    */
   deleteChar() {
+    if (this.submitted) {
+      return;
+    }
+
     if (this.answer.length > 0) {
       this.answer = this.answer.substr(0, this.answer.length - 1);
     }
@@ -220,6 +305,7 @@ export class PracticeQuestionComponent implements OnInit, AfterViewInit {
     switch (key) {
       case 'Backspace':
       case 'Delete':
+      case 'Del':
         this.deleteChar();
         break;
       case 'Enter':

@@ -7,7 +7,6 @@ import { AnswerService } from '../services/answer/answer.service';
 import { AuditEntry, CheckSubmissionPending, RefreshDetected } from '../services/audit/auditEntry';
 import { AuditService } from '../services/audit/audit.service';
 import { AuditServiceMock } from '../services/audit/audit.service.mock';
-import { CheckComplete } from '../services/audit/auditEntry';
 import { CheckComponent } from './check.component';
 import { QuestionService } from '../services/question/question.service';
 import { QuestionServiceMock } from '../services/question/question.service.mock';
@@ -49,7 +48,7 @@ describe('CheckComponent', () => {
         { provide: StorageService, useClass: StorageServiceMock },
         { provide: SubmissionService, useClass: SubmissionServiceMock },
         { provide: WarmupQuestionService, useClass: QuestionServiceMock },
-        WindowRefService,
+        WindowRefService
       ]
     })
       .compileComponents();
@@ -250,6 +249,7 @@ describe('CheckComponent', () => {
       component['changeState']();
 
       expect(auditService.addEntry).toHaveBeenCalledTimes(1);
+      expect(storageService.setItem).toHaveBeenCalledWith(  'pending_submission', true );
       expect(auditEntryInserted instanceof CheckSubmissionPending).toBeTruthy();
     });
   });

@@ -61,6 +61,8 @@ $mainstream-brand: $department-for-education;
 @import 'elements/_mtc-checkboxes';
 @import 'elements/_modal';
 @import 'elements/_restarts';
+@import 'elements/_groups';
+@import 'elements/_pupil-census';
 
 // Global
 
@@ -227,6 +229,10 @@ dl dd {
   margin-left: pem(35px);
 }
 
+.list-item--dashed:before {
+  content: "— ";
+}
+
 // Forms
 input:disabled {
   border: 0;
@@ -334,6 +340,10 @@ input {
 
   @include media(tablet) {
     margin-top: 0;
+  }
+
+  &.disabled-link {
+    color: $grey-1;
   }
 }
 
@@ -503,4 +513,5 @@ a.disabled-link {
   pointer-events: none;
   cursor: default;
   color: #6f777b;
+  text-decoration: none;
 }

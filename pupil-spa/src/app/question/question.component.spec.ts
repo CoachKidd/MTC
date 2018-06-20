@@ -4,17 +4,14 @@ import { HttpModule } from '@angular/http';
 import { QuestionComponent } from './question.component';
 import { AuditService } from '../services/audit/audit.service';
 import { AuditServiceMock } from '../services/audit/audit.service.mock';
-import { QuestionRendered, QuestionAnswered, AuditEntry } from '../services/audit/auditEntry';
-import { RegisterInputService } from '../services/register-input/registerInput.service';
-import { RegisterInputServiceMock } from '../services/register-input/register-input-service.mock';
+import { QuestionRendered, QuestionAnswered, QuestionTimerStarted, QuestionTimerCancelled, AuditEntry } from '../services/audit/auditEntry';
 import { QuestionService } from '../services/question/question.service';
 import { QuestionServiceMock } from '../services/question/question.service.mock';
 import { StorageService } from '../services/storage/storage.service';
-import { StorageServiceMock } from '../services/storage/storage.service.mock';
-import { SubmissionService } from '../services/submission/submission.service';
-import { SubmissionServiceMock } from '../services/submission/submission.service.mock';
 import { SpeechService } from '../services/speech/speech.service';
 import { SpeechServiceMock } from '../services/speech/speech.service.mock';
+import { RegisterInputService } from '../services/register-input/registerInput.service';
+import { RegisterInputServiceMock } from '../services/register-input/register-input-service.mock';
 import { WindowRefService } from '../services/window-ref/window-ref.service';
 
 
@@ -30,6 +27,9 @@ describe('QuestionComponent', () => {
       declarations: [ QuestionComponent ],
       providers: [
         { provide: AuditService, useValue: auditServiceMock },
+        { provide: SpeechService, useClass: SpeechServiceMock },
+        { provide: QuestionService, useClass: QuestionServiceMock },
+        StorageService,
         WindowRefService,
         { provide: RegisterInputService, useClass: RegisterInputServiceMock }
       ]
@@ -120,6 +120,16 @@ describe('QuestionComponent', () => {
       expect(component.handleKeyboardEvent).toHaveBeenCalledTimes(5);
     });
 
+    it('keyboard calls deleteChar when pressing "Del"', () => {
+      spyOn(component, 'handleKeyboardEvent').and.callThrough();
+      spyOn(component, 'deleteChar').and.callThrough();
+      dispatchKeyEvent({ key: '1' });
+      dispatchKeyEvent({ key: '0' });
+      expect(component.answer).toBe('10');
+      dispatchKeyEvent({ key: 'Del' });
+      expect(component.answer).toBe('1');
+    });
+
     it('keyboard calls OnSubmit() when Enter is pressed (if there is an answer)', () => {
       spyOn(component, 'handleKeyboardEvent').and.callThrough();
       spyOn(component, 'onSubmit').and.returnValue(null);
@@ -173,16 +183,28 @@ describe('QuestionComponent', () => {
       });
     });
     it('is added on question rendered', () => {
+      component.sequenceNumber = 1;
+      component.factor1 = 2;
+      component.factor2 = 3;
       component.ngAfterViewInit();
-      expect(auditServiceMock.addEntry).toHaveBeenCalledTimes(1);
-      expect(auditEntryInserted instanceof QuestionRendered).toBeTruthy();
+      expect(auditServiceMock.addEntry).toHaveBeenCalledTimes(2); // two times, timer event + render event
+      expect(auditEntryInserted instanceof QuestionRendered
+            || auditEntryInserted instanceof QuestionTimerStarted).toBeTruthy();
+      expect((<any> auditEntryInserted.data).sequenceNumber).toBe(1);
+      expect((<any> auditEntryInserted.data).question).toBe('2x3');
     });
 
     it('is added on answer submitted', () => {
+      component.sequenceNumber = 1;
+      component.factor1 = 2;
+      component.factor2 = 3;
       component.answer = '42';
       component.onSubmit();
-      expect(auditServiceMock.addEntry).toHaveBeenCalledTimes(1);
-      expect(auditEntryInserted instanceof QuestionAnswered).toBeTruthy();
+      expect(auditServiceMock.addEntry).toHaveBeenCalledTimes(2); // two times, timer event + answer event
+      expect(auditEntryInserted instanceof QuestionAnswered
+            || auditEntryInserted instanceof QuestionTimerCancelled).toBeTruthy();
+      expect((<any> auditEntryInserted.data).sequenceNumber).toBe(1);
+      expect((<any> auditEntryInserted.data).question).toBe('2x3');
     });
   });
 
@@ -202,9 +224,12 @@ describe('QuestionComponent', () => {
   describe('#onClickBackspace', () => {
     it('calls registerInputService', () => {
       spyOn(registerInputService, 'storeEntry');
+      component.sequenceNumber = 1;
+      component.factor1 = 1;
+      component.factor2 = 2;
       component.onClickBackspace();
       expect(registerInputService.storeEntry).toHaveBeenCalledTimes(1);
-      expect(registerInputService.storeEntry).toHaveBeenCalledWith('backspace', 'click');
+      expect(registerInputService.storeEntry).toHaveBeenCalledWith('Backspace', 'click', 1, '1x2');
     });
 
     it('deletes a char from the answer', () => {
@@ -214,12 +239,15 @@ describe('QuestionComponent', () => {
     });
   });
 
-  describe('#onClickSubnmit', () => {
+  describe('#onClickSubmit', () => {
     it('calls registerInputService', () => {
       spyOn(registerInputService, 'storeEntry');
+      component.sequenceNumber = 1;
+      component.factor1 = 1;
+      component.factor2 = 2;
       component.onClickSubmit();
       expect(registerInputService.storeEntry).toHaveBeenCalledTimes(1);
-      expect(registerInputService.storeEntry).toHaveBeenCalledWith('enter', 'click');
+      expect(registerInputService.storeEntry).toHaveBeenCalledWith('Enter', 'click', 1, '1x2');
     });
 
     it('calls onSubmit()', () => {

@@ -8,10 +8,13 @@ const groupService = require('../services/group.service')
 const dateService = require('../services/date.service')
 const qrService = require('../services/qr.service')
 const checkStartService = require('../services/check-start.service')
+const checkWindowSanityCheckService = require('../services/check-window-sanity-check.service')
 
 const getGeneratePinsOverview = async (req, res, next) => {
   res.locals.pageTitle = 'Generate pupil PINs'
   req.breadcrumbs(res.locals.pageTitle)
+
+  const helplineNumber = config.Data.helplineNumber
   let pupils
   try {
     pupils = await pinService.getPupilsWithActivePins(req.user.School)
@@ -21,8 +24,16 @@ const getGeneratePinsOverview = async (req, res, next) => {
   if (pupils && pupils.length > 0) {
     return res.redirect('/pupil-pin/generated-pins-list')
   }
+  let error
+  try {
+    error = await checkWindowSanityCheckService.check()
+  } catch (err) {
+    return next(err)
+  }
   return res.render('pupil-pin/generate-pins-overview', {
-    breadcrumbs: req.breadcrumbs()
+    breadcrumbs: req.breadcrumbs(),
+    error,
+    helplineNumber
   })
 }
 
@@ -105,12 +116,16 @@ const postGeneratePins = async (req, res, next) => {
 const getGeneratedPinsList = async (req, res, next) => {
   res.locals.pageTitle = 'Generate pupil PINs'
   req.breadcrumbs(res.locals.pageTitle)
+
+  const helplineNumber = config.Data.helplineNumber
   let pupils
   let school
+  let error
   const date = dateService.formatDayAndDate(new Date())
   try {
     pupils = await pinService.getPupilsWithActivePins(req.user.School)
     school = await pinService.getActiveSchool(req.user.School)
+    error = await checkWindowSanityCheckService.check()
   } catch (error) {
     return next(error)
   }
@@ -118,18 +133,36 @@ const getGeneratedPinsList = async (req, res, next) => {
     breadcrumbs: req.breadcrumbs(),
     school,
     pupils,
-    date
+    date,
+    error,
+    helplineNumber
   })
 }
 
+/**
+ * Get Print PINs.
+ * @param req
+ * @param res
+ * @param next
+ * @returns {Promise<*>}
+ */
 const getPrintPins = async (req, res, next) => {
   res.locals.pageTitle = 'Print pupils'
+  let groups
   let pupils
   let school
   let qrDataURL
   const date = dateService.formatDayAndDate(new Date())
+  const pinCardDate = dateService.formatFullGdsDate(new Date())
   try {
+    groups = await groupService.getGroupsAsArray(req.user.schoolId)
     pupils = await pinService.getPupilsWithActivePins(req.user.School)
+    if (pupils.length > 0 && groups.length > 0) {
+      pupils = pupils.map(p => {
+        p.group = groups[p.group_id] || ''
+        return p
+      })
+    }
     school = await pinService.getActiveSchool(req.user.School)
     qrDataURL = await qrService.getDataURL(config.PUPIL_APP_URL)
   } catch (error) {
@@ -139,6 +172,7 @@ const getPrintPins = async (req, res, next) => {
     pupils,
     school,
     date,
+    pinCardDate,
     qrDataURL,
     url: config.PUPIL_APP_URL
   })

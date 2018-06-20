@@ -1,0 +1,92 @@
+<div class="grid-row">
+    <div class="column-one-half">
+        <%- partial('partials/_breadcrumbs', { breadcrumbs: breadcrumbs }) %>
+    </div>
+    <div class="column-one-half">
+        <%- partial('partials/_name_and_sign_out') %>
+    </div>
+</div>
+
+<div class="grid-row" id="pupils-not-taking-checks" aria-describedby="heading-xlarge">
+
+    <div class="column-two-thirds">
+        <% if (messages.info && messages.info.length > 0) { %>
+        <div class="info-message">
+            <%= messages.info.join('<br/>') %>
+        </div>
+        <% } %>
+
+        <h1 class="heading-xlarge" id="heading-xlarge">Pupils not taking the check</h1>
+
+        <p class="lede">
+            All pupils should be considered for the Multiplication Tables Check at the end of year 4.
+            If a pupil is not going to take the check, a reason must be provided.
+        </p>
+
+        <div class="button-wrapper">
+            <a class="button" href="/pupils-not-taking-the-check/select-pupils">Add reason</a>
+        </div>
+
+        <% if (pupilsList && pupilsList.length > 0) { %>
+        <table class="spacious" id="pupilsList" role="listbox" aria-label="Select pupils.">
+            <thead>
+                <tr>
+                    <th scope="col">Pupil</th>
+                    <th scope="col">Reason</th>
+                    <th scope="col">&nbsp;</th>
+                </tr>
+            </thead>
+            <tbody>
+                <% pupilsList.forEach( (pupil, index) => { %>
+                <tr>
+                    <td<% if (highlight.indexOf(pupil.urlSlug) !== -1) { %> class="highlight-item"<% } %>>
+                        <div class="highlight-wrapper">
+                            <label for="pupil-<%= pupil.urlSlug %>">
+                                <%= pupil.fullName %>
+                                <% if (pupil.showDoB) { %>
+                                <div class="font-greyed-out font-xsmall">
+                                    Date of birth: <%= pupil.dateOfBirth %>
+                                </div>
+                                <% } %>
+                            </label>
+                        </div>
+                    </td>
+                    <td class="wrap-text">
+                        <%= pupil.reason || 'N/A' %>
+                    </td>
+                    <td class="align-right">
+                        <a href="/pupils-not-taking-the-check/remove/<%= pupil.urlSlug %>">Remove</a>
+                    </td>
+                </tr>
+                <% }) %>
+            </tbody>
+        </table>
+        <% } else { %>
+        <p class="top-padding-30">No pupils added</p>
+        <% } %>
+
+        <br class="clearfix"/>
+
+        <div class="back-to-top-container">
+            <a href="#top">Back to top</a>
+        </div>
+    </div>
+
+    <div class="column-one-third sidebar" aria-label="sidebar">
+        <aside role="complementary" class="support-column">
+            <h3 class="heading-medium">Related</h3>
+            <nav role="navigation">
+                <ul class="list">
+                    <li>
+                        <a href="<%- guidancePdf %>" target="_blank" rel="noopener noreferrer">Guidance</a></li>
+                    <li>
+                        <a class="font-greyed-out disabled-link" href="#">Access arrangements</a>
+                    </li>
+                    <li>
+                        <a href="/pupil-pin/generate-pins-overview">Generate pupil PINs</a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+    </div>
+</div>

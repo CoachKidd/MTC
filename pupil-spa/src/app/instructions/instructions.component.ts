@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import { QuestionService } from '../services/question/question.service';
 import { AuditService } from '../services/audit/audit.service';
@@ -11,19 +11,21 @@ import { WindowRefService } from '../services/window-ref/window-ref.service';
   templateUrl: './instructions.component.html',
   styleUrls: ['./instructions.component.css']
 })
-export class InstructionsComponent implements OnInit {
+export class InstructionsComponent implements OnInit, AfterViewInit, OnDestroy {
 
   public count: number;
   public loadingTime: number;
   public questionTime: number;
   protected window: any;
+  private speechListenerEvent: any;
 
   constructor(
     private router: Router,
     private questionService: QuestionService,
     private auditService: AuditService,
     private speechService: SpeechService,
-    protected windowRefService: WindowRefService) {
+    protected windowRefService: WindowRefService,
+    private elRef: ElementRef) {
     this.count = this.questionService.getNumberOfQuestions();
     const config = this.questionService.getConfig();
     this.loadingTime = config.loadingTime;
@@ -40,10 +42,26 @@ export class InstructionsComponent implements OnInit {
 
   onClick() {
     this.auditService.addEntry(new WarmupStarted());
-    if (this.questionService.getConfig().speechSynthesis) {
-      this.speechService.speak('Speech output is on.');
-    }
     this.router.navigate(['check']);
   }
 
+  // wait for the component to be rendered first, before parsing the text
+  ngAfterViewInit() {
+    if (this.questionService.getConfig().speechSynthesis) {
+      this.speechService.speakElement(this.elRef.nativeElement);
+
+      this.speechListenerEvent = this.elRef.nativeElement.addEventListener('focus', (event) => {
+        this.speechService.speakFocusedElement(event.target);
+      }, true);
+    }
+  }
+
+  ngOnDestroy(): void {
+    // stop the current speech process if the page is changed
+    if (this.questionService.getConfig().speechSynthesis) {
+      this.speechService.cancel();
+
+      this.elRef.nativeElement.removeEventListener('focus', this.speechListenerEvent, true);
+    }
+  }
 }

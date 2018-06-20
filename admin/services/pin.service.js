@@ -5,23 +5,17 @@ const checkDataService = require('../services/data-access/check.data.service')
 const schoolDataService = require('../services/data-access/school.data.service')
 const pupilIdentificationFlagService = require('../services/pupil-identification-flag.service')
 const jwtService = require('../services/jwt.service')
-const dateService = require('../services/date.service')
 const pinValidator = require('../lib/validator/pin-validator')
 const pinService = {}
 
 /**
  * Get pupils with active pins
  * @param dfeNumber
- * @returns {Array}
+ * @returns {Promise<*>}
  */
 pinService.getPupilsWithActivePins = async (dfeNumber) => {
   let pupils = await pupilDataService.sqlFindPupilsWithActivePins(dfeNumber)
-  pupils = pupils.map(p => {
-    p.dateOfBirth = dateService.formatShortGdsDate(p.dateOfBirth)
-    return p
-  })
-  pupils = pupilIdentificationFlagService.addIdentificationFlags(pupils)
-  return pupils
+  return pupilIdentificationFlagService.addIdentificationFlags(pupils)
 }
 
 /**
@@ -68,9 +62,10 @@ pinService.expireMultiplePins = async (pupilIds) => {
     if (p.pin || p.pinExpiresAt) pupilData.push(p)
   })
   if (pupilData.length === 0) return
+  const currentTimeStamp = moment.utc()
   pupilData = pupilData.map(p => {
     p.pin = null
-    p.pinExpiresAt = null
+    p.pinExpiresAt = currentTimeStamp
     return p
   })
   const data = pupilData.map(p => ({ id: p.id, pin: p.pin, pinExpiresAt: p.pinExpiresAt }))

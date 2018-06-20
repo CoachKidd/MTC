@@ -75,7 +75,7 @@ export class CheckComponent implements OnInit {
    * @return {boolean}
    */
   @HostListener('document:touchend', [ '$event' ])
-  handleTouchEndEvent(event: TouchEvent) {
+  handleTouchEndEvent(event) {
     event.preventDefault();
     event.target.dispatchEvent(new Event('click', { bubbles: true }));
     return false;
@@ -225,6 +225,7 @@ export class CheckComponent implements OnInit {
       case CheckComponent.submissionPendingRe.test(stateDesc): {
         // Display pending screen
         this.auditService.addEntry(new CheckSubmissionPending());
+        this.storageService.setItem('pending_submission', true);
         this.isWarmUp = false;
         this.viewState = 'submission-pending';
         this.window.ga('send', {
@@ -244,7 +245,7 @@ export class CheckComponent implements OnInit {
   manualSubmitHandler(answer: string) {
     // console.log(`check.component: manualSubmitHandler(): ${answer}`);
     if (!this.isWarmUp) {
-      const answerSet = { factor1: this.question.factor1, factor2: this.question.factor2, answer };
+      const answerSet = new Answer(this.question.factor1, this.question.factor2, answer, this.question.sequenceNumber);
       this.answerService.setAnswer(answerSet);
     }
     this.changeState();
@@ -257,7 +258,7 @@ export class CheckComponent implements OnInit {
   questionTimeoutHandler(answer: string) {
     // console.log(`check.component: questionTimeoutHandler(): called with ${answer}`);
     if (!this.isWarmUp) {
-      const answerSet = { factor1: this.question.factor1, factor2: this.question.factor2, answer };
+      const answerSet = new Answer(this.question.factor1, this.question.factor2, answer, this.question.sequenceNumber);
       this.answerService.setAnswer(answerSet);
     }
     this.changeState();
@@ -342,7 +343,7 @@ export class CheckComponent implements OnInit {
       const matches = CheckComponent.questionRe.exec(stateDesc);
       const questionNum = parseInt(matches[ 1 ], 10);
       this.question = this.questionService.getQuestion(questionNum);
-      const answer = new Answer(this.question.factor1, this.question.factor2, '');
+      const answer = new Answer(this.question.factor1, this.question.factor2, '', this.question.sequenceNumber);
       this.answerService.setAnswer(answer);
       // console.log('refreshDetected(): calling changeState()');
       this.changeState();
@@ -353,7 +354,7 @@ export class CheckComponent implements OnInit {
       const matches = CheckComponent.spokenQuestionRe.exec(stateDesc);
       const questionNum = parseInt(matches[ 1 ], 10);
       this.question = this.questionService.getQuestion(questionNum);
-      const answer = new Answer(this.question.factor1, this.question.factor2, '');
+      const answer = new Answer(this.question.factor1, this.question.factor2, '', this.question.sequenceNumber);
       this.answerService.setAnswer(answer);
       // console.log('refreshDetected(): calling changeState()');
       this.changeState();

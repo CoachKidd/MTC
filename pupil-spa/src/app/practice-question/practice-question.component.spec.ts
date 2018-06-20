@@ -3,6 +3,11 @@ import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 import { PracticeQuestionComponent } from './practice-question.component';
 import { AuditService } from '../services/audit/audit.service';
 import { AuditServiceMock } from '../services/audit/audit.service.mock';
+import { SpeechService } from '../services/speech/speech.service';
+import { SpeechServiceMock } from '../services/speech/speech.service.mock';
+import { StorageService } from '../services/storage/storage.service';
+import { QuestionService } from '../services/question/question.service';
+import { QuestionServiceMock } from '../services/question/question.service.mock';
 import { WindowRefService } from '../services/window-ref/window-ref.service';
 
 describe('PractiseQuestionComponent', () => {
@@ -14,6 +19,9 @@ describe('PractiseQuestionComponent', () => {
       declarations: [ PracticeQuestionComponent ],
       providers: [
         { provide: AuditService, useClass: AuditServiceMock },
+        { provide: SpeechService, useClass: SpeechServiceMock },
+        { provide: QuestionService, useClass: QuestionServiceMock },
+        StorageService,
         WindowRefService
       ]
     })
@@ -139,6 +147,16 @@ describe('PractiseQuestionComponent', () => {
       dispatchKeyEvent({ key: 'Delete' });
       expect(component.answer).toBe('1');
       expect(component.handleKeyboardEvent).toHaveBeenCalledTimes(5);
+    });
+
+    it('keyboard calls deleteChar when pressing "Del"', () => {
+      spyOn(component, 'handleKeyboardEvent').and.callThrough();
+      spyOn(component, 'deleteChar').and.callThrough();
+      dispatchKeyEvent({ key: '1' });
+      dispatchKeyEvent({ key: '0' });
+      expect(component.answer).toBe('10');
+      dispatchKeyEvent({ key: 'Del' });
+      expect(component.answer).toBe('1');
     });
 
     it('keyboard calls OnSubmit() when Enter is pressed (if there is an answer)', () => {

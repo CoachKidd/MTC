@@ -2,15 +2,21 @@
 
 const R = require('ramda')
 const moment = require('moment')
+const momentDurationFormatSetup = require('moment-duration-format')
 const winston = require('winston')
+const useragent = require('useragent')
+
+momentDurationFormatSetup(moment)
 
 const psUtilService = {}
 
 psUtilService.getMark = function getMark (completedCheck) {
+  if (!completedCheck.data) return ''
   return R.pathOr('error', ['mark'], completedCheck)
 }
 
 psUtilService.getClientTimestampFromAuditEvent = function (auditEventType, completedCheck) {
+  if (!completedCheck.data) return ''
   const logEntries = completedCheck.data.audit.filter(logEntry => logEntry.type === auditEventType)
   if (!logEntries.length) {
     return 'error'
@@ -22,29 +28,97 @@ psUtilService.getClientTimestampFromAuditEvent = function (auditEventType, compl
   return logEntry.clientTimestamp
 }
 
+psUtilService.getClientTimestampDiffFromAuditEvents = function (firstAuditEventType, secondAuditEventType, completedCheck) {
+  if (!completedCheck.data) return ''
+
+  return moment.duration(
+    moment(psUtilService.getClientTimestampFromAuditEvent(secondAuditEventType, completedCheck))
+      .diff(moment(psUtilService.getClientTimestampFromAuditEvent(firstAuditEventType, completedCheck)))
+  ).format('HH:mm:ss', {trim: false})
+}
+
 /**
  * Consolidate the touch start event with the click event that follows it
- * @param val
- * @param idx
- * @param ary
+ * @param [{object}] - the entire array of inputs for a single question
+ * @return [{object}] - filtered and transformed objects
  */
-psUtilService.cleanUpTouchEvents = function (obj, idx, ary) {
-  if (obj.eventType === 'touchstart') {
-    return null
-  }
-  if (obj.eventType !== 'click') {
-    return obj
-  }
-  const precedingEvent = ary[idx - 1]
+psUtilService.cleanUpInputEvents = function (inputEvents) {
+  // This algorithm works by buffering all touchstart and mousedown events and clicks until it sees a
+  // new touchstart then it associates the last touchstart or mousedown event with the last click, and
+  // works backwards until all the clicks have been handled. It will then parse the next batch of
+  // touchstart and click events.
+  //
+  // Excess touchstart or mousedown events are ignored.
 
-  if (precedingEvent && precedingEvent.eventType === 'touchstart') {
-    // consolidate touchstart and click events into a single touch event for reporting
-    const o = Object.assign({}, obj)
-    o.eventType = 'touch'
-    return o
+  const openTouchAndMouseEvents = []
+  const clickEvents = []
+  const output = []
+  const touchCount = inputEvents.filter(event => event.eventType === 'touchstart').length
+  const mouseCount = inputEvents.filter(event => event.eventType === 'mousedown').length
+
+  for (let event of inputEvents) {
+    if (event.eventType === 'touchstart' || event.eventType === 'mousedown') {
+      // check to see if what we have inputs in the click buffer and touch/mouse buffers
+      clearBuffers(clickEvents, openTouchAndMouseEvents, output)
+      openTouchAndMouseEvents.push(event)
+      continue
+    }
+
+    if (event.eventType === 'click' && openTouchAndMouseEvents.length > 0) {
+      clickEvents.push(event)
+    } else if (event.eventType === 'click') {
+      // A single click without any context.  Possibly the header is lost.
+      if (touchCount > mouseCount) {
+        // We take an educated guess as to what kind of click it is
+        // This guess would be more
+        const newEvent = R.clone(event)
+        newEvent.eventType = 'touch' // It's more likely to be a touch event
+        output.push(newEvent)
+      } else {
+        // It will be treated, rightly or wrongly, as a mouse click
+        output.push(R.clone(event))
+      }
+    } else if (event.eventType === 'keydown') {
+      clearBuffers(clickEvents, openTouchAndMouseEvents, output)
+      output.push(event)
+    }
   }
 
-  return obj
+  // Check for items left in the buffers
+  clearBuffers(clickEvents, openTouchAndMouseEvents, output)
+  return output
+}
+
+/**
+ * Function used in `cleanUpInputEvents()`  add the clientTimestamp to the click event
+ * @param touchOrMouseEvent
+ * @param clickEvent
+ * @return {{input, eventType: string, clientTimestamp: *, question}}
+ */
+function mergeEvents (touchOrMouseEvent, clickEvent) {
+  const clientTimestamp = touchOrMouseEvent ? touchOrMouseEvent.clientTimestamp : clickEvent.clientTimestamp
+  const newEvent = {
+    input: clickEvent.input,
+    eventType: touchOrMouseEvent.eventType === 'touchstart' ? 'touch' : 'click',
+    clientTimestamp,
+    question: clickEvent.question
+  }
+  return newEvent
+}
+
+/**
+ * IMPURE function used in `cleanUpInputEvents()` - combine the buffers into events and add the event to the output object
+ * @param clickEvents
+ * @param openTouchAndMouseEvents
+ * @param output
+ */
+function clearBuffers (clickEvents, openTouchAndMouseEvents, output) {
+  while (clickEvents.length) {
+    const clickEvent = clickEvents.pop()
+    const touchOrMouseEvent = openTouchAndMouseEvents.pop()
+    const newEvent = mergeEvents(touchOrMouseEvent, clickEvent)
+    output.push(newEvent)
+  }
 }
 
 /**
@@ -60,44 +134,42 @@ psUtilService.getUserInput = function getUserInput (inputs) {
   if (!Array.isArray(inputs)) {
     return ''
   }
-  inputs
-    .filter(inp => inp.eventType !== 'mousedown')
-    .map(this.cleanUpTouchEvents)
-    .filter(inp => !!inp) // filter out nulls
-    .forEach(inp => {
-      let ident = ''
+  const normalisedInputs = psUtilService.cleanUpInputEvents(inputs)
+  normalisedInputs.forEach(inp => {
+    let ident = ''
 
-      switch (inp.eventType) {
-        case 'keydown':
-          // hardware keyboard was pressed
-          ident = 'k'
-          break
-        case 'click':
-        case 'mousedown':
-          // Mouse was pressed
-          ident = 'm'
-          break
-        case 'touch':
-          // Mouse or fingers on a screen
-          ident = 't'
-          break
-        default:
-          winston.info('Unknown input type: ' + inp.eventType)
-          winston.info('inp ', inp)
-          ident = 'u'
-          break
-      }
-      output.push(`${ident}[${inp.input}]`)
-    })
+    switch (inp.eventType) {
+      case 'keydown':
+        // hardware keyboard was pressed
+        ident = 'k'
+        break
+      case 'click':
+      case 'mousedown':
+        // Mouse was pressed
+        ident = 'm'
+        break
+      case 'touch':
+        // Mouse or fingers on a screen
+        ident = 't'
+        break
+      default:
+        winston.info('Unknown input type: ' + inp.eventType)
+        winston.info('inp ', inp)
+        ident = 'u'
+        break
+    }
+    output.push(`${ident}[${inp.input}]`)
+  })
   return output.join(', ')
 }
 
 /**
  * Get the time of the user's last input that is not enter
  * @param {Array} inputs
+ * @param {Object} answer
  * @return {String}
  */
-psUtilService.getLastAnswerInputTime = function (inputs) {
+psUtilService.getLastAnswerInputTime = function (inputs, answer) {
   if (!(inputs && Array.isArray(inputs))) {
     winston.info('Invalid param inputs')
     return 'error'
@@ -105,20 +177,30 @@ psUtilService.getLastAnswerInputTime = function (inputs) {
   if (inputs.length === 0) {
     return ''
   }
-  for (let i = inputs.length - 1; i >= 0; i--) {
-    const input = R.pathOr('', [i, 'input'], inputs)
-    if (input.toUpperCase() !== 'ENTER') {
-      return R.pathOr('error', [i, 'clientInputDate'], inputs)
-    }
+
+  // We may have inputs, but no answer recorded.  E.g. 1,1,Backspace,Backspace
+  // In which case there was no response
+  if (!answer) {
+    return ''
   }
+
+  // Filter the inputs to only those that constitute the answer.  E.g. 0-9, Backspace
+  const filtered = this.filterInputsToAnswerKeys(inputs)
+
+  if (!filtered.length) {
+    return ''
+  }
+
+  return R.pathOr('error', ['clientTimestamp'], R.last(filtered))
 }
 
 /**
  * Returns the client timestamp as a string of the first input from the user
- * @param inputs
+ * @param {Array} inputs
+ * @param {Object} answer
  * @return {String}
  */
-psUtilService.getFirstInputTime = function (inputs) {
+psUtilService.getFirstInputTime = function (inputs, answer) {
   if (!(inputs && Array.isArray(inputs))) {
     winston.info('Invalid param inputs')
     return 'error'
@@ -126,7 +208,41 @@ psUtilService.getFirstInputTime = function (inputs) {
   if (inputs.length === 0) {
     return ''
   }
-  return R.pathOr('error', [0, 'clientInputDate'], inputs)
+
+  // We may have inputs, but no answer recorded.  E.g. 1,1,Backspace,Backspace
+  // In which case there was no response
+  if (!answer) {
+    return ''
+  }
+
+  // Filter the inputs to only those that constitute the answer.  E.g. 0-9, Backspace
+  const filtered = this.filterInputsToAnswerKeys(inputs)
+
+  if (!filtered.length) {
+    return ''
+  }
+
+  return R.pathOr('error', ['clientTimestamp'], R.head(filtered))
+}
+
+psUtilService.filterInputsToAnswerKeys = function (inputs) {
+  const normalisedInputs = psUtilService.cleanUpInputEvents(inputs)
+  let answer = ''
+  const output = []
+  for (let event of normalisedInputs) {
+    if (event.input.match(/^[0-9]$/)) {
+      answer += event.input
+      output.push(event)
+      continue
+    }
+    if (event.input.toUpperCase() === 'BACKSPACE' && answer.length) {
+      answer = answer.slice(0, -1) // remove last char
+      output.push(event)
+    }
+    // All other inputs are ignored as they do not change the answer
+    // NB this currently counts inputs that are longer than 5 chars
+  }
+  return output
 }
 
 /**
@@ -134,7 +250,7 @@ psUtilService.getFirstInputTime = function (inputs) {
  * @param {Array} input
  * @return {*}
  */
-psUtilService.getResponseTime = function (inputs) {
+psUtilService.getResponseTime = function (inputs, answer) {
   if (!(inputs && Array.isArray(inputs))) {
     winston.info('Invalid param inputs')
     return 'error'
@@ -142,8 +258,9 @@ psUtilService.getResponseTime = function (inputs) {
   if (inputs.length === 0) {
     return ''
   }
-  const first = moment(this.getFirstInputTime(inputs))
-  const last = moment(this.getLastAnswerInputTime(inputs))
+  const first = moment(this.getFirstInputTime(inputs, answer))
+  const last = moment(this.getLastAnswerInputTime(inputs, answer))
+
   if (!(first.isValid() && last.isValid())) {
     return ''
   }
@@ -152,16 +269,26 @@ psUtilService.getResponseTime = function (inputs) {
 
 /**
  * A flag to determine if the question timed out (rather than the user pressing Enter)
- * @param inputs
+ * @param {String} answer - the answer provided
+ * @param {[Object]} inputs
  * @return {string|number}
  */
-psUtilService.getTimeoutFlag = function (inputs) {
+psUtilService.getTimeoutFlag = function (answer, inputs) {
   let timeout = 1
   if (!(inputs && Array.isArray(inputs))) {
     winston.info('invalid input: ', inputs)
     return 'error'
   }
-  if (R.pathOr('', ['input'], R.last(inputs)).toUpperCase() === 'ENTER') {
+
+  const normalisedInputs = psUtilService.cleanUpInputEvents(inputs)
+
+  // There can only be a timeout if there is an answer
+  const isEnterKey = R.compose(
+    R.propEq('input', 'ENTER'),
+    R.evolve({ input: R.toUpper })
+  )
+
+  if (R.length(answer) > 0 && isEnterKey(R.last(normalisedInputs))) {
     timeout = 0
   }
   return timeout
@@ -177,8 +304,12 @@ psUtilService.getTimeoutWithNoResponseFlag = function (inputs, answer) {
   if (!Array.isArray(inputs)) {
     return 'error'
   }
+  const hasTimeout = this.getTimeoutFlag(answer.answer, inputs)
+  if (!hasTimeout) {
+    return ''
+  }
+
   let timeoutNoResponse = 1
-  const hasTimeout = psUtilService.getTimeoutFlag(inputs)
   if (hasTimeout === 1 && answer.answer === '') {
     timeoutNoResponse = 0
   }
@@ -189,10 +320,14 @@ psUtilService.getTimeoutWithNoResponseFlag = function (inputs, answer) {
  * Return 1 if the question timed out, and the correct answer was given. 0 otherwise.
  * @param inputs - inputs from the SPA data
  * @param {answer} ans - marked answer from the `answer` table
- * @return {number}
+ * @return {number||string}
  */
 psUtilService.getTimeoutWithCorrectAnswer = function (inputs, markedAnswer) {
-  if (this.getTimeoutFlag(inputs) === 1 && markedAnswer.isCorrect) {
+  const timeout = this.getTimeoutFlag(markedAnswer.answer, inputs)
+  if (!timeout) {
+    return ''
+  }
+  if (timeout === 1 && markedAnswer.isCorrect) {
     return 1
   }
   return 0
@@ -203,6 +338,113 @@ psUtilService.getScore = function (markedAnswer) {
     return 'error'
   }
   return markedAnswer.isCorrect ? 1 : 0
+}
+
+psUtilService.getDevice = function (userAgent) {
+  if (!userAgent) {
+    return ''
+  }
+  const agent = useragent.parse(userAgent)
+  return agent.device.toString().replace('0.0.0', '').trim()
+}
+
+psUtilService.getBrowser = function (userAgent) {
+  if (!userAgent) {
+    return ''
+  }
+  const agent = useragent.parse(userAgent)
+  return agent.toString()
+}
+
+psUtilService.getLoadTime = function (questionNumber, audits) {
+  const entry = audits.find(e => {
+    if (R.propEq('type', 'QuestionRendered', e) &&
+      R.path(['data', 'sequenceNumber'], e) === questionNumber) {
+      return true
+    }
+  })
+  return R.propOr('', 'clientTimestamp', entry || {})
+}
+
+psUtilService.getOverallTime = function (tLastKey, tLoad) {
+  if (!tLastKey || !tLoad) {
+    return ''
+  }
+  const m1 = moment(tLastKey)
+  if (!m1.isValid()) {
+    return ''
+  }
+  const m2 = moment(tLoad)
+  if (!m2.isValid()) {
+    return ''
+  }
+  return m1.diff(m2) / 1000
+}
+
+/**
+ * Return the recall time: the difference in seconds between the question appearing and the first key pressed
+ * @param {string} tLoad - ISO8601 string e.g. "2018-02-16T20:06:30.700Z"
+ * @param {string} tFirstKey - ISO8601 string - ditto
+ */
+psUtilService.getRecallTime = function (tLoad, tFirstKey) {
+  if (!tLoad || !tFirstKey) {
+    return ''
+  }
+  const m1 = moment(tLoad)
+  if (!m1.isValid()) {
+    return ''
+  }
+  const m2 = moment(tFirstKey)
+  if (!m2.isValid()) {
+    return ''
+  }
+  return m2.diff(m1) / 1000
+}
+
+psUtilService.getInputMethod = function (inputs) {
+  if (!inputs) {
+    return ''
+  }
+  if (!Array.isArray(inputs)) {
+    return ''
+  }
+  const types = {
+    key: 0,
+    mouse: 0,
+    touch: 0
+  }
+  const normalisedInputs = psUtilService.cleanUpInputEvents(inputs)
+  normalisedInputs.forEach(input => {
+    const eventType = R.prop('eventType', input)
+    switch (eventType) {
+      case 'keydown':
+        types['key'] += 1
+        break
+      case 'touch':
+        types['touch'] += 1
+        break
+      case 'mousedown':
+      case 'click':
+        types['mouse'] += 1
+        break
+      default:
+        if (eventType) {
+          winston.info('UNKNOWN event type' + eventType)
+        }
+    }
+  })
+
+  if (types['key'] && !types['mouse'] && !types['touch']) {
+    return 'k'
+  } else if (types['mouse'] && !types['key'] && !types['touch']) {
+    return 'm'
+  } else if (types['touch'] && !types['key'] && !types['mouse']) {
+    return 't'
+  } else if (!types['key'] && !types['mouse'] && !types['touch']) {
+    return ''
+  } else {
+    return 'x' // combination
+  }
 }
 
 module.exports = psUtilService

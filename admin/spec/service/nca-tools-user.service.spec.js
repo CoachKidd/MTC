@@ -1,7 +1,7 @@
 'use strict'
 
 /* global describe, it, spyOn, expect, fail, beforeEach */
-let ncaToolsUserService, schoolDataService, userDataService, roleService, ncaToolsSessionDataService
+let ncaToolsUserService, schoolDataService, userDataService, roleService
 
 describe('nca-tools-user.service', () => {
   describe('mapNcaUserToMtcUser', () => {
@@ -44,7 +44,7 @@ describe('nca-tools-user.service', () => {
       spyOn(userDataService, 'sqlCreate').and.returnValue(Promise.resolve())
       await ncaToolsUserService.mapNcaUserToMtcUser({
         School: 999999,
-        UserType: 'batman',
+        UserType: 'SchoolNom',
         UserName: 'robin'
       })
       expect(userDataService.sqlCreate).toHaveBeenCalled()
@@ -62,7 +62,7 @@ describe('nca-tools-user.service', () => {
       try {
         await ncaToolsUserService.mapNcaUserToMtcUser({
           School: 999999,
-          UserType: 'batman',
+          UserType: 'SchoolNom',
           UserName: 'robin'
         })
         fail('expected error to be thrown')
@@ -81,7 +81,7 @@ describe('nca-tools-user.service', () => {
       spyOn(userDataService, 'sqlCreate').and.returnValue(Promise.resolve())
       await ncaToolsUserService.mapNcaUserToMtcUser({
         School: 999999,
-        UserType: 'batman',
+        UserType: 'SchoolNom',
         UserName: 'robin'
       })
       expect(userDataService.sqlUpdateSchool).toHaveBeenCalled()
@@ -96,59 +96,23 @@ describe('nca-tools-user.service', () => {
       spyOn(userDataService, 'sqlCreate').and.returnValue(Promise.resolve())
       const user = await ncaToolsUserService.mapNcaUserToMtcUser({
         School: 999999,
-        UserType: 'batman',
+        UserType: 'SchoolNom',
         UserName: 'robin'
       })
       expect(user).toBeDefined()
       expect(user.mtcRole).toBe('TEACHER')
       done()
     })
-  })
 
-  describe('recordLogonAttempt', () => {
-    beforeEach(() => {
-      ncaToolsUserService = require('../../services/nca-tools-user.service')
-      ncaToolsSessionDataService = require('../../services/data-access/nca-tools-session.data.service')
-    })
-    it('throws an error if logonData missing', async (done) => {
-      try {
-        await ncaToolsUserService.recordLogonAttempt()
-        fail('expected error to be thrown')
-      } catch (error) {
-        expect(error).toBeDefined()
-        expect(error.message).toBe('missing arguments')
-      }
-      done()
-    })
-    it('throws an error if logonData.sessionToken missing', async (done) => {
-      try {
-        await ncaToolsUserService.recordLogonAttempt({ userName: 'x' })
-        fail('expected error to be thrown')
-      } catch (error) {
-        expect(error).toBeDefined()
-        expect(error.message).toBe('missing arguments')
-      }
-      done()
-    })
-    it('throws an error if logonData.userName missing', async (done) => {
-      try {
-        await ncaToolsUserService.recordLogonAttempt({ sessionToken: 'x' })
-        fail('expected error to be thrown')
-      } catch (error) {
-        expect(error).toBeDefined()
-        expect(error.message).toBe('missing arguments')
-      }
-      done()
-    })
-    it('persists the logon data via data service', async (done) => {
-      try {
-        spyOn(ncaToolsSessionDataService, 'sqlCreate').and.returnValue(Promise.resolve())
-        await ncaToolsUserService.recordLogonAttempt({ userName: 'x', sessionToken: 'y' })
-        expect(ncaToolsSessionDataService.sqlCreate).toHaveBeenCalled()
-      } catch (error) {
-        fail('should succeed')
-      }
-      done()
+    it('does not look up school if not provided', async () => {
+      spyOn(schoolDataService, 'sqlFindOneByDfeNumber')
+      spyOn(userDataService, 'sqlFindOneByIdentifier').and.returnValue(Promise.resolve({ school_id: null }))
+      spyOn(userDataService, 'sqlUpdateSchool')
+      spyOn(roleService, 'findByTitle').and.returnValue(Promise.resolve({ id: 1 }))
+      spyOn(userDataService, 'sqlCreate').and.returnValue(Promise.resolve())
+      await ncaToolsUserService.mapNcaUserToMtcUser({UserType: 'SchoolNom'})
+      expect(schoolDataService.sqlFindOneByDfeNumber).not.toHaveBeenCalled()
+      expect(userDataService.sqlUpdateSchool).not.toHaveBeenCalled()
     })
   })
 })

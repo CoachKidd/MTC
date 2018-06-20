@@ -5,136 +5,77 @@ require('dotenv').config()
 const express = require('express')
 const piping = require('piping')
 const path = require('path')
-const morgan = require('morgan')
 const busboy = require('express-busboy')
 const partials = require('express-partials')
-const mongoose = require('mongoose')
-const autoIncrement = require('mongoose-auto-increment')
 const uuidV4 = require('uuid/v4')
 const expressValidator = require('express-validator')
 const passport = require('passport')
 const LocalStrategy = require('passport-local').Strategy
 const CustomStrategy = require('passport-custom').Strategy
 const session = require('express-session')
-const MongoStore = require('connect-mongo')(session)
+const TediousSessionStore = require('connect-tedious')(session)
 const breadcrumbs = require('express-breadcrumbs')
-const cors = require('cors')
 const flash = require('connect-flash')
-const helmet = require('helmet')
 const config = require('./config')
-const devWhitelist = require('./whitelist-dev')
+const checkConfigWhitelist = require('./helpers/whitelist-dev')
 const azure = require('./azure')
-/**
- * Logging
- * use LogDNA transport for winston if configuration setting available
- */
+const featureToggles = require('feature-toggles')
 const winston = require('winston')
-if (config.Logging.LogDna.key) {
-  require('logdna')
-  const options = config.Logging.LogDna
-  // Defaults to false, when true ensures meta object will be searchable
-  options.index_meta = true
-  // Only add this line in order to track exceptions
-  options.handleExceptions = true
-  winston.add(winston.transports.Logdna, options)
-  winston.info(`logdna transport enabled for ${options.hostname}`)
-}
-
-if (process.env.NODE_ENV !== 'production') {
-  winston.level = 'debug'
-}
+const R = require('ramda')
+const csurf = require('csurf')
+const setupLogging = require('./helpers/logger')
+const setupBrowserSecurity = require('./helpers/browserSecurity')
 
 azure.startInsightsIfConfigured()
 
-const unsetVars = []
-Object.keys(config).map((key) => {
-  if (!config[key] && !devWhitelist.includes(key)) {
-    unsetVars.push(`${key}`)
-  }
-})
+/**
+ * Load feature toggles
+ */
+winston.info('ENVIRONMENT_NAME : ' + config.Environment)
+const environmentName = config.Environment
+let featureTogglesSpecific, featureTogglesDefault, featureTogglesMerged
+let featureTogglesSpecificPath, featureTogglesDefaultPath
+try {
+  featureTogglesSpecificPath = './config/feature-toggles.' + environmentName
+  featureTogglesSpecific = environmentName ? require(featureTogglesSpecificPath) : null
+} catch (err) {}
 
-if (unsetVars.length > 0) {
-  const error = `The following environment variables need to be defined:\n${unsetVars.join('\n')}`
-  process.exitCode = 1
-  throw new Error(error)
+try {
+  featureTogglesDefaultPath = './config/feature-toggles.default'
+  featureTogglesDefault = require(featureTogglesDefaultPath)
+} catch (err) {}
+
+featureTogglesMerged = R.merge(featureTogglesDefault, featureTogglesSpecific)
+
+if (featureTogglesMerged) {
+  winston.info(`Loading merged feature toggles from '${featureTogglesSpecificPath}', '${featureTogglesDefaultPath}': `, featureTogglesMerged)
+  featureToggles.load(featureTogglesMerged)
 }
-
-mongoose.promise = global.Promise
-
-if (process.env.NODE_ENV !== 'production') {
-  mongoose.set('debug', true)
-}
-
-const connectionString = config.MONGO_CONNECTION_STRING
-mongoose.connect(connectionString, {
-  keepAlive: true,
-  reconnectTries: 120,
-  // set the delay between every retry (milliseconds)
-  reconnectInterval: 1000,
-  useMongoClient: true
-})
-
-autoIncrement.initialize(mongoose.connection)
 
 const index = require('./routes/index')
 const testDeveloper = require('./routes/test-developer')
 const serviceManager = require('./routes/service-manager')
-const admin = require('./routes/admin')
+const school = require('./routes/school')
 const questions = require('./routes/questions')
 const pupilFeedback = require('./routes/pupil-feedback')
 const checkStarted = require('./routes/check-started')
 const completedCheck = require('./routes/completed-check')
 const pupilPin = require('./routes/pupil-pin')
 const restart = require('./routes/restart')
+const pupilsNotTakingTheCheck = require('./routes/pupils-not-taking-the-check')
+const group = require('./routes/group')
+const pupilRegister = require('./routes/pupil-register')
+const attendance = require('./routes/attendance')
 
 if (process.env.NODE_ENV === 'development') piping({ignore: [/test/, '/coverage/']})
 const app = express()
 
-/**
- * Express logging to winston
- */
-const expressWinston = require('express-winston')
-app.use(expressWinston.logger({
-  transports: [
-    new winston.transports.Console({
-      json: true,
-      colorize: true
-    })
-  ],
-  meta: true, // optional: control whether you want to log the meta data about the request (default to true)
-  // msg: "HTTP {{req.method}} {{req.url}}", // optional: customize the default logging message. E.g. "{{res.statusCode}} {{req.method}} {{res.responseTime}}ms {{req.url}}"
-  expressFormat: true, // Use the default Express/morgan request formatting. Enabling this will override any msg if true. Will only output colors with colorize set to true
-  colorize: false, // Color the text and status code, using the Express/morgan color palette (text: gray, status: default green, 3XX cyan, 4XX yellow, 5XX red).
-  ignoreRoute: function (req, res) {
-    return false
-  } // optional: allows to skip some log messages based on request and/or response
-}))
+setupBrowserSecurity(app)
+setupLogging(app)
+// checkConfigWhitelist(app)
 
-/* Security Directives */
-
-app.use(cors())
-app.use(helmet())
-app.use(helmet.contentSecurityPolicy({
-  directives: {
-    defaultSrc: ["'self'"],
-    scriptSrc: ["'self'", "'unsafe-inline'", 'https://www.google-analytics.com'],
-    fontSrc: ["'self'", 'data:'],
-    styleSrc: ["'self'"],
-    imgSrc: ["'self'", 'https://www.google-analytics.com', 'data:'],
-    connectSrc: ["'self'"],
-    objectSrc: ["'none'"],
-    mediaSrc: ["'none'"],
-    childSrc: ["'none'"]
-  }
-}))
-
-// Sets request header "Strict-Transport-Security: max-age=31536000; includeSubDomains".
-var oneYearInSeconds = 31536000
-app.use(helmet.hsts({
-  maxAge: oneYearInSeconds,
-  includeSubDomains: false,
-  preload: false
-}))
+// Use the feature toggle middleware to enable it in res.locals
+app.use(featureToggles.middleware)
 
 // azure uses req.headers['x-arr-ssl'] instead of x-forwarded-proto
 // if production ensure x-forwarded-proto is https OR x-arr-ssl is present
@@ -159,7 +100,7 @@ app.use((req, res, next) => {
 
 /* END:Security Directives */
 
-require('./helpers')(app)
+require('./helpers/index')(app)
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'))
@@ -169,7 +110,6 @@ app.set('view engine', 'ejs')
 // app.use(favicon(path.join(__dirname, 'public', 'favicon.ico')))
 
 app.use(partials())
-// app.use(morgan('dev'))
 busboy.extend(app, {
   upload: true,
   path: 'data/files',
@@ -182,28 +122,57 @@ busboy.extend(app, {
   ]
 })
 
-const allowedPath = (url) => (/^\/school\/pupil\/add-batch-pupils$/).test(url) ||
-  (/^\/test-developer\/upload-new-form$/).test(url)
+const allowedPath = (url) => (/^\/pupil-register\/pupil\/add-batch-pupils$/).test(url) ||
+  (/^\/test-developer\/upload-new-form$/).test(url) ||
+  (/^\/service-manager\/upload-pupil-census\/upload$/).test(url)
 
-const mongoStoreOptions = {
-  mongooseConnection: mongoose.connection,
-  collection: 'adminsessions'
+// as we run in container over http, we must set up proxy trust for secure cookies
+let secureCookie = false
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1)
+  secureCookie = true
 }
+
 const sessionOptions = {
-  name: 'staff-app.sid',
+  name: 'mtc-admin-session-id',
   secret: config.SESSION_SECRET,
   resave: false,
   rolling: true,
   saveUninitialized: false,
-  cookie: {maxAge: 1200000}, // Expire after 20 minutes inactivity
-  store: new MongoStore(mongoStoreOptions)
+  cookie: {
+    maxAge: 1200000, // Expire after 20 minutes inactivity
+    httpOnly: true,
+    secure: secureCookie
+  },
+  store: new TediousSessionStore({
+    config: {
+      appName: config.Sql.Application.Name,
+      userName: config.Sql.Application.Username,
+      password: config.Sql.Application.Password,
+      server: config.Sql.Server,
+      options: {
+        port: config.Sql.Port,
+        database: config.Sql.Database,
+        encrypt: true,
+        requestTimeout: config.Sql.Timeout
+      }
+    },
+    tableName: '[mtc_admin].[sessions]'
+  })
 }
 app.use(session(sessionOptions))
 app.use(passport.initialize())
 app.use(passport.session())
 app.use(flash())
 app.use(expressValidator())
-app.use(express.static(path.join(__dirname, 'public')))
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, path) => {
+    // force download all .csv files
+    if (path.endsWith('.csv')) {
+      res.attachment(path)
+    }
+  }
+}))
 
 // Breadcrumbs
 app.use(breadcrumbs.init())
@@ -233,7 +202,7 @@ passport.use(
 
 // Middleware to upload all files uploaded to Azure Blob storage
 // Should be configured after busboy
-if (process.env.NODE_ENV === 'production') {
+if (config.AZURE_STORAGE_CONNECTION_STRING) {
   app.use(require('./lib/azure-upload'))
 }
 
@@ -255,16 +224,30 @@ app.use(function (req, res, next) {
   next()
 })
 
-app.use('/', index)
-app.use('/test-developer', testDeveloper)
-app.use('/service-manager', serviceManager)
-app.use('/school', admin)
-app.use('/pupil-pin', pupilPin)
-app.use('/restart', restart)
+
 app.use('/api/questions', questions)
 app.use('/api/pupil-feedback', pupilFeedback)
 app.use('/api/completed-check', completedCheck)
 app.use('/api/check-started', checkStarted)
+
+// CSRF setup - needs to be set up after session() and after API calls
+// that shouldn't use CSRF
+app.use(csurf())
+app.use((req, res, next) => {
+  res.locals.csrftoken = req.csrfToken()
+  next()
+})
+
+app.use('/', index)
+app.use('/test-developer', testDeveloper)
+app.use('/service-manager', serviceManager)
+app.use('/school', school)
+app.use('/pupil-pin', pupilPin)
+app.use('/pupils-not-taking-the-check', pupilsNotTakingTheCheck)
+app.use('/group', group)
+app.use('/restart', restart)
+app.use('/pupil-register', pupilRegister)
+app.use('/attendance', attendance)
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
@@ -277,14 +260,14 @@ app.use(function (req, res, next) {
 app.use(function (err, req, res, next) {
   let errorId = uuidV4()
   // set locals, only providing error in development
-  // TODO change this to a real logger with an error string that contains
+  // @TODO: change this to a real logger with an error string that contains
   // all pertinent information. Assume 2nd/3rd line support would pick this
   // up from logging web interface (e.g. ELK / LogDNA)
   winston.error('ERROR: ' + err.message + ' ID:' + errorId)
   winston.error(err.stack)
 
   // render the error page
-  // TODO provide an error code and phone number? for the user to call support
+  // @TODO: provide an error code and phone number? for the user to call support
   res.locals.message = 'An error occurred'
   res.locals.error = req.app.get('env') === 'development' ? err : {}
   res.locals.errorId = errorId

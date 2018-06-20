@@ -8,7 +8,6 @@ const pupilRestartDataService = require('../services/data-access/pupil-restart.d
 const pupilIdentificationFlagService = require('../services/pupil-identification-flag.service')
 const pinService = require('../services/pin.service')
 const pinValidator = require('../lib/validator/pin-validator')
-const dateService = require('../services/date.service')
 const config = require('../config')
 
 const restartService = {}
@@ -25,15 +24,11 @@ restartService.getPupils = async (dfeNumber) => {
   const school = await schoolDataService.sqlFindOneByDfeNumber(dfeNumber)
   if (!school) throw new Error(`School [${dfeNumber}] not found`)
   let pupils = await pupilDataService.sqlFindPupilsByDfeNumber(dfeNumber, 'lastName', 'asc')
+  pupils = pupilIdentificationFlagService.addIdentificationFlags(pupils)
   pupils = await bluebird.filter(pupils.map(async p => {
     const isPupilEligible = await restartService.isPupilEligible(p)
     if (isPupilEligible) return p
   }), p => !!p)
-  if (pupils.length === 0) return []
-  pupils = pupils.map(({ id, pin, dob, foreName, middleNames, lastName, group_id }) =>
-    ({ id, pin, dob: dateService.formatShortGdsDate(dob), foreName, middleNames, lastName, group_id })
-  )
-  pupils = pupilIdentificationFlagService.addIdentificationFlags(pupils)
   return pupils
 }
 
@@ -62,12 +57,13 @@ restartService.isPupilEligible = async (p) => {
  * @param pupilsList
  * @param restartReasonCode
  * @param didNotCompleteInfo
+ * @param classDisruptionInfo
  * @param restartFurtherInfo
  * @param userName
  * @returns {Promise.<void>}
  */
 
-restartService.restart = async (pupilsList, restartReasonCode, didNotCompleteInfo, restartFurtherInfo, userName) => {
+restartService.restart = async (pupilsList, restartReasonCode, classDisruptionInfo, didNotCompleteInfo, restartFurtherInfo, userName) => {
   await pinService.expireMultiplePins(pupilsList)
   // All pupils should be eligible for restart before proceeding with creating a restart record for each one
   const canAllPupilsRestart = restartService.canAllPupilsRestart(pupilsList)
@@ -80,6 +76,7 @@ restartService.restart = async (pupilsList, restartReasonCode, didNotCompleteInf
       pupil_id: pupilId,
       recordedByUser_id: userName,
       pupilRestartReason_id: restartReasonId,
+      classDisruptionInformation: classDisruptionInfo,
       didNotCompleteInformation: didNotCompleteInfo,
       furtherInformation: restartFurtherInfo,
       createdAt: moment.utc()
@@ -150,7 +147,7 @@ restartService.getSubmittedRestarts = async schoolId => {
         foreName: p.foreName,
         lastName: p.lastName,
         middleNames: p.middleNames,
-        dateOfBirth: dateService.formatShortGdsDate(p.dateOfBirth)
+        dateOfBirth: p.dateOfBirth
       })
     }
   }))

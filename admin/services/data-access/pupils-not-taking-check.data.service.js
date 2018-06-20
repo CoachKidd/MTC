@@ -1,24 +1,9 @@
 'use strict'
 
-const Pupil = require('../../models/pupil')
-const AttendanceCode = require('../../models/attendance-code')
 const sqlService = require('./sql.service')
 const TYPES = require('tedious').TYPES
 
 const pupilsNotTakingCheckDataService = {
-/**
- * @param schoolId
- * @deprecated use sqlFindPupilsWithReasons
- * @returns {Promise.<*>}
- */
-  fetchPupilsWithReasons: async (schoolId) => {
-    return Pupil
-      .find({'attendanceCode': {$exists: true}, 'school': schoolId})
-      .sort('lastName')
-      .lean()
-      .exec()
-  },
-
 /**
  * @param {number} dfeNumber
  * @description returns all pupils with specified school that have a record of attendance
@@ -31,8 +16,8 @@ const pupilsNotTakingCheckDataService = {
         INNER JOIN ${sqlService.adminSchema}.[school] s ON p.school_id = s.id
         INNER JOIN ${sqlService.adminSchema}.[pupilAttendance] pa ON p.id = pa.pupil_id 
         INNER JOIN ${sqlService.adminSchema}.[attendanceCode] ac ON pa.attendanceCode_id = ac.id
-      WHERE s.dfeNumber = @dfeNumber
-      ORDER BY p.lastName ASC`
+      WHERE s.dfeNumber = @dfeNumber AND pa.isDeleted = 0
+      ORDER BY p.lastName ASC, p.foreName ASC, p.middleNames ASC, p.dateOfBirth ASC`
 
     const params = [{
       name: 'dfeNumber',
@@ -42,17 +27,23 @@ const pupilsNotTakingCheckDataService = {
 
     return sqlService.query(sql, params)
   },
- /**
- *
- * @deprecated use attendanceCodeDataService.sqlFindAttendanceCodes
- * @returns {Promise.<*>}
- */
-  getAttendanceCodes: async () => {
-    return AttendanceCode
-      .find()
-      .sort('order')
-      .lean()
-      .exec()
+
+  /**
+   * @param {Array} pupilIds
+   * @description returns all pupils that are included in the list and have a record of attendance
+   * @returns {Promise.<*>}
+   */
+  sqlFindPupilsWithReasonByIds: async (pupilIds) => {
+    const select = `
+      SELECT p.id, ac.reason
+      FROM ${sqlService.adminSchema}.[pupil] p 
+        INNER JOIN ${sqlService.adminSchema}.[pupilAttendance] pa ON p.id = pa.pupil_id 
+        INNER JOIN ${sqlService.adminSchema}.[attendanceCode] ac ON pa.attendanceCode_id = ac.id
+      `
+
+    const where = sqlService.buildParameterList(pupilIds, TYPES.Int)
+    const sql = [select, 'WHERE pa.isDeleted = 0 AND p.id IN (', where.paramIdentifiers.join(', '), ')'].join(' ')
+    return sqlService.query(sql, where.params)
   }
 }
 

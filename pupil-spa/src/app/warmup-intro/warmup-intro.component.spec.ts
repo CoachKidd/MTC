@@ -3,8 +3,13 @@ import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 import { WarmupIntroComponent } from './warmup-intro.component';
 import { AuditService } from '../services/audit/audit.service';
 import { AuditServiceMock } from '../services/audit/audit.service.mock';
+import { QuestionService } from '../services/question/question.service';
+import { QuestionServiceMock } from '../services/question/question.service.mock';
+import { SpeechService } from '../services/speech/speech.service';
+import { SpeechServiceMock } from '../services/speech/speech.service.mock';
 import { WarmupIntroRendered, AuditEntry } from '../services/audit/auditEntry';
 import { WindowRefService } from '../services/window-ref/window-ref.service';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
 
 describe('WarmupIntroComponent', () => {
   let component: WarmupIntroComponent;
@@ -14,8 +19,11 @@ describe('WarmupIntroComponent', () => {
 
     TestBed.configureTestingModule({
       declarations: [ WarmupIntroComponent ],
+      schemas: [ NO_ERRORS_SCHEMA ], // we don't need to test sub-components
       providers: [
         { provide: AuditService, useClass: AuditServiceMock},
+        { provide: SpeechService, useClass: SpeechServiceMock },
+        { provide: QuestionService, useClass: QuestionServiceMock },
         WindowRefService,
       ]
     })

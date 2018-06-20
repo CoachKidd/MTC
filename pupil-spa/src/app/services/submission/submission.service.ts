@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 import { StorageService } from '../storage/storage.service';
 import { AuditService } from '../audit/audit.service';
+import { AppUsageService } from '../app-usage/app-usage.service';
 import { CheckStartedAPICallFailed, CheckSubmissionAPIFailed } from '../audit/auditEntry';
 import 'rxjs/add/operator/delay';
 import 'rxjs/add/operator/take';
@@ -26,13 +27,16 @@ export class SubmissionService {
   checkSubmissionApiErrorDelay = checkSubmissionApiErrorDelay;
   checkSubmissionAPIErrorMaxAttempts = checkSubmissionAPIErrorMaxAttempts;
 
-  constructor(private http: HttpClient, private storageService: StorageService, private auditService: AuditService) {
+  constructor(private http: HttpClient,
+              private storageService: StorageService,
+              private auditService: AuditService,
+              private appUsageService: AppUsageService) {
   }
 
   submitCheckStartData() {
     const {checkCode} = this.storageService.getItem('pupil');
     const accessToken = this.storageService.getItem('access_token');
-    return this.http.post(`${environment.apiURL}/api/check-started`,
+    return this.http.post(`${environment.checkStartedURL}`,
       // Explanation for response type text
       // https://github.com/angular/angular/issues/21211
       {checkCode, accessToken}, { responseType: 'text' })
@@ -56,7 +60,10 @@ export class SubmissionService {
 
   submitData() {
     const localStorageData = this.storageService.getAllItems();
-    return this.http.post(`${environment.apiURL}/api/completed-check`,
+    if (localStorageData.device) {
+      localStorageData.device.appUsageCounter = this.appUsageService.getCounterValue();
+    }
+    return this.http.post(`${environment.checkSubmissionURL}`,
       // Explanation for response type text
       // https://github.com/angular/angular/issues/21211
       {...localStorageData}, { responseType: 'text' })

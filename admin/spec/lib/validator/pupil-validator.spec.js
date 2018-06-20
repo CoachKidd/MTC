@@ -2,7 +2,6 @@
 
 /* global beforeEach, afterEach, describe, it, expect, spyOn */
 const sinon = require('sinon')
-require('sinon-mongoose')
 
 const pupilValidator = require('../../../lib/validator/pupil-validator')
 const pupilDataService = require('../../../services/data-access/pupil.data.service')
@@ -423,6 +422,13 @@ describe('pupil validator', function () {
         expect(validationError.hasError()).toBe(true)
         expect(validationError.isError('gender')).toBe(true)
         expect(validationError.get('gender')).toBe('Gender must be M or F')
+        done()
+      })
+      it('can be accepted in lowercase', async (done) => {
+        req.body = getBody()
+        req.body['gender'] = 'f'
+        const validationError = await pupilValidator.validate(req.body)
+        expect(validationError.hasError()).toBeFalsy()
         done()
       })
     })

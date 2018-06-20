@@ -1,34 +1,10 @@
 'use strict'
 
-const CompletedChecks = require('../../models/completed-checks')
 const sqlService = require('./sql.service')
 const TYPES = require('tedious').TYPES
 const R = require('ramda')
 const completedCheckDataService = {}
 const checkDataService = require('./check.data.service')
-
-/**
- * Query : find a completedCheck document that has not been marked
- * @deprecated mongoose specific
- * @type {{$or: [null,null]}}
- */
-const unmarkedQueryCriteria = {
-  '$or': [
-    { isMarked: { $exists: false } },
-    { isMarked: false }
-  ]
-}
-
-/**
- * Create a new Check
- * @param data
- * @deprecated use sqlCreate
- * @return {Promise}
- */
-completedCheckDataService.create = async function (data) {
-  const completedCheck = new CompletedChecks(data)
-  return completedCheck.save()
-} // used by check-complete.service to insert pupil check
 
 /**
  * @description inserts a new check to the database
@@ -42,9 +18,10 @@ completedCheckDataService.sqlCreate = async function (data) {
  * Updates check record with results
  * @param checkCode
  * @param completedCheck the entire JSON payload submitted by the pupil
+ * @param receivedByServerAt the timestamp when data was received by the server
  * @return {Promise}
  */
-completedCheckDataService.sqlAddResult = async function (checkCode, completedCheck) {
+completedCheckDataService.sqlAddResult = async function (checkCode, completedCheck, receivedByServerAt) {
   const params = [
     {
       name: 'checkCode',
@@ -63,30 +40,11 @@ completedCheckDataService.sqlAddResult = async function (checkCode, completedChe
   const checkId = result.id
   const checkDataParams = {
     'id': checkId,
-    'data': JSON.stringify(completedCheck)
+    'data': JSON.stringify(completedCheck),
+    'receivedByServerAt': receivedByServerAt
   }
   return sqlService.update('[check]', checkDataParams)
 }
-
-/**
- * updates check document
- * @deprecated unused - no replacement
- * @param {*} doc
- */
-completedCheckDataService.save = async function (doc) {
-  return CompletedChecks.replaceOne({_id: doc._id}, doc).exec()
-}
-
-/**
- * Find one or more documents. Returns an array or null.
- * @param criteria
- * @deprecated use sqlFindOne and sqlFindByIds
- * @return {Promise.<*>}
- */
-completedCheckDataService.find = async function (criteria) {
-  return CompletedChecks.find(criteria).lean().exec()
-}
-// used by pupil-status.service to find latest completed check by pupil
 
 /**
  * @param {string} checkCode
@@ -119,53 +77,14 @@ completedCheckDataService.sqlFindByIds = async (batchIds) => {
 }
 
 /**
- * Count the number of documents that match `criteria`
- * @param criteria
- * @deprecated unused
- * @return {Promise.<*>}
- */
-completedCheckDataService.count = async function (criteria) {
-  return CompletedChecks.count(criteria).exec()
-}
-
-/**
- * Return a boolean if there are documents that have not been marked.
- * @deprecated use sqlHasUnmarked
- * @return {Promise.<boolean>}
- */
-completedCheckDataService.hasUnmarked = async function () {
-  const count = await this.count(unmarkedQueryCriteria)
-  return count > 0
-}
-
-/**
  * @description returns a boolean indicating whether there are unmarked checks in the database
  */
 completedCheckDataService.sqlHasUnmarked = async () => {
-  const sql = `SELECT COUNT(*) as [unmarkedCount] FROM [mtc_admin].[check] WHERE markedAt IS NULL`
+  const sql = `SELECT COUNT(*) as [unmarkedCount]
+  FROM ${sqlService.adminSchema}.[check] chk
+  WHERE chk.markedAt IS NULL AND chk.data IS NOT NULL`
   const result = await sqlService.query(sql)
   return result[0].unmarkedCount > 0
-}
-
-/**
- * Return plain completedCheck objects that have not been marked, up to a the limit specified by `batchsize`
- * Returns an array of Ids: [1234, 5678, ...] of CompletedChecks.  Used by the batch processor.
- * @param batchSize
- * @deprecated use sqlFindUnmarked
- * @return {Promise.<Array>}
- */
-completedCheckDataService.findUnmarked = async function (batchSize) {
-  if (!batchSize) {
-    throw new Error('Missing argument: batchSize')
-  }
-  const batchIds = await CompletedChecks.find(
-    unmarkedQueryCriteria, { _id: 1 }
-  )
-    // .sort({ createdAt: 1 })
-    .limit(batchSize)
-    .lean()
-    .exec()
-  return batchIds.map(b => b._id)
 }
 
 /**
@@ -179,21 +98,13 @@ completedCheckDataService.sqlFindUnmarked = async function (batchSize) {
   }
   const safeBatchSize = parseInt(batchSize, 10)
 
-  const sql = `SELECT TOP ${safeBatchSize} id FROM [mtc_admin].[check] WHERE markedAt IS NULL`
+  const sql = `SELECT TOP ${safeBatchSize} id FROM [mtc_admin].[check] 
+  WHERE markedAt IS NULL
+  AND [data] IS NOT NULL`
   const results = await sqlService.query(sql)
   return results.map(r => r.id)
 }
 
-/**
- * Generalised update function - use with care
- * @param query
- * @param criteria
- * @deprecated use sqlSetAllUnmarked
- * @return {Promise}
- */
-completedCheckDataService.update = async function (query, criteria, options = {}) {
-  return CompletedChecks.update(query, criteria, options).exec()
-}
 // used by PS Report to set all unmarked
 
 completedCheckDataService.sqlSetAllUnmarked = async () => {
@@ -219,6 +130,74 @@ completedCheckDataService.sqlFindOneByCheckCode = async function (checkCode) {
   // Hydrate the JSON string in to an object
   const first = R.head(result)
   return R.assoc('data', (JSON.parse(first.data)).data, first)
+}
+
+/**
+ * Retrieve a number of completed checks especially for use in a batch service
+ * @param lowCheckId
+ * @param batchSize
+ * @return {Promise}
+ */
+completedCheckDataService.sqlFind = async (lowCheckId, batchSize) => {
+  const safeBatchSize = parseInt(batchSize, 10)
+  if (isNaN(safeBatchSize)) {
+    throw new Error(`batchSize is not a number: ${batchSize}`)
+  }
+  if (safeBatchSize < 1) {
+    throw new Error('Batch size must be at least 1')
+  }
+  if (safeBatchSize > 250) {
+    // As the SQL has an ORDER BY clause we need to limit the number of rows ordered
+    // for performance reasons.
+    throw new Error(`batchSize too large`)
+  }
+  const sql = `
+    SELECT 
+      TOP ${safeBatchSize} *
+    FROM ${sqlService.adminSchema}.[check]
+    WHERE data IS NOT NULL
+    AND id >= @lowCheckId
+    ORDER BY ID ASC
+  `
+  const params = [
+    {
+      name: 'lowCheckId',
+      value: lowCheckId,
+      type: TYPES.Int
+    }
+  ]
+  const checks = await sqlService.query(sql, params)
+  return R.map(parseData, checks)
+}
+
+/**
+ * Return some meta information about the completed checks so a batch service can operate on it
+ * @return {Promise}
+ */
+completedCheckDataService.sqlFindMeta = async () => {
+  const sql = `
+    SELECT
+    min(id) as [min], max(id) as [max], count(id) as [count]
+    FROM [mtc_admin].[check]
+    WHERE data IS NOT NULL;
+  `
+  const res = await sqlService.query(sql)
+  return R.head(res)
+}
+
+function parseData (check) {
+  if (!check.data) {
+    return check
+  }
+
+  try {
+    const decoded = JSON.parse(check.data)
+    check.data = decoded.data
+  } catch (error) {
+    console.error(`Error: failed to decode JSON for check [${check.id}]: ${error.message}`)
+  }
+
+  return check
 }
 
 module.exports = completedCheckDataService

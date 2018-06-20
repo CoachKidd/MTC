@@ -1,0 +1,97 @@
+<div class="grid-row">
+    <div class="column-one-half">
+        <%- partial('partials/_breadcrumbs', { breadcrumbs: breadcrumbs }) %>
+    </div>
+    <div class="column-one-half">
+        <%- partial('partials/_name_and_sign_out') %>
+    </div>
+</div>
+<div class="grid-row">
+    <div class="column-two-thirds">
+        <% if (messages && messages.info && messages.info.length) { %>
+            <div class="info-message">
+                <%= messages.info %>
+            </div>
+        <% } %>
+        <div>
+            <h1 class="heading-xlarge">Pupil register</h1>
+            <p class="lede">
+                This list is pre-populated using information from your school's census. Review your list and add additional pupils, if required. If a pupil is not going to participate, go to <a href="/pupils-not-taking-the-check">Pupils not taking the check</a>.
+            </p>
+            <div class="button-wrapper">
+                <% if (isFeatureEnabled('pupilAdd')) { %>
+                <a class="button button-secondary" href="/pupil-register/pupil/add"> Add pupil </a>
+                <% } else { %>
+                <a class="button button-secondary disabled-link" href="#"> Add pupil </a>
+                <% } %>
+
+                <% if (isFeatureEnabled('pupilUpload')) { %>
+                <a class="button button-secondary" href="/pupil-register/pupil/add-batch-pupils"> Add multiple pupils </a>
+                <% } else { %>
+                <a class="button button-secondary disabled-link" href="#"> Add multiple pupils </a>
+                <% } %>
+            </div>
+        </div>
+        <table id="register-pupils" class="spacious">
+            <thead>
+                <tr>
+                    <th scope="col" class="two-thirds">
+                        <a class="no-underline" id="sortingLink" href="/pupil-register/pupils-list/name/<%= htmlSortDirection.name %>">Pupil<span class="<%= arrowSortDirection.name %>"><span>Sort by pupil <%= htmlSortDirection.name %></span></span></a>
+                    </th>
+                    <th scope="col">
+                        <a class="no-underline" id="sortingLink" href="/pupil-register/pupils-list/group/<%= htmlSortDirection.group %>">Group<span class="<%= arrowSortDirection.group %>"><span>Sort by group <%= htmlSortDirection.group %></span></span></a>
+                    </th>
+                    <th scope="col">
+                        <a class="no-underline" id="sortingLink" href="/pupil-register/pupils-list/status/<%= htmlSortDirection.status %>">Status<span class="<%= arrowSortDirection.status %>"><span>Sort by status <%= htmlSortDirection.status %></span></span></a>
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+            <% pupils.forEach((p) => { %>
+                <tr>
+                    <td<% if (highlight && highlight.has(p.urlSlug.toString())) { %> class="highlight-item"<% } %>>
+                        <div class="highlight-wrapper">
+                            <% if (isFeatureEnabled('pupilEdit')) { %>
+                                <a class="bold-small truncate" href="/pupil-register/pupil/edit/<%= p.urlSlug %>" >
+                                    <%= `${p.fullName}` %>
+                                </a>
+                                <% } else { %>
+                                <span class="bold-small truncate">
+                                    <%= `${p.fullName}` %>
+                                </span>
+                            <% } %>
+                            <% if (p.showDoB) { %>
+                                <div class="font-greyed-out font-xsmall">
+                                    Date of birth: <%= p.dateOfBirth %>
+                                </div>
+                            <% } %>
+                        </div>
+                    </td>
+                    <td><%= p.group %></td>
+                    <td class="nowrap column-narrow"><%= p.outcome %></td>
+                </tr>
+            <% }) %>
+            </tbody>
+        </table>
+        <div class="back-to-top-container">
+            <a href="#top">Back to top</a>
+        </div>
+    </div>
+    <div class="column-one-third sidebar" aria-label="sidebar">
+        <aside role="complementary" class="support-column">
+            <h3 class="heading-medium">Related</h3>
+            <nav role="navigation">
+                <ul class="list">
+                    <li><a href="<%- guidancePdf %>" target="_blank" rel="noopener noreferrer">Guidance</a></li>
+                    <li><a href="/group/pupils-list">Group pupils</a></li>
+                    <li><a href="/pupils-not-taking-the-check">Pupils not taking the check</a></li>
+                    <li><a class="disabled-link" href="#">Access arrangements</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+    </div>
+</div>
+
+
+

@@ -9,7 +9,6 @@ const checkDataService = require('../../services/data-access/check.data.service'
 const pupilFeedbackDataService = require('../../services/data-access/pupil-feedback.data.service')
 const checkMock = require('../mocks/check')
 
-require('sinon-mongoose')
 let sandbox
 let jwtPromiseHelper
 let mockCheckData
@@ -59,7 +58,7 @@ describe('Pupil Feedback controller', () => {
       findOneByCheckCodePromiseHelper.resolve(checkMock)
     })
 
-    it('returns bad request if request payload is not provided', async(done) => {
+    it('returns bad request if request payload is not provided', async (done) => {
       const req = httpMocks.createRequest({
         method: 'POST',
         url: '/api/pupil-feedback',
@@ -74,7 +73,7 @@ describe('Pupil Feedback controller', () => {
       done()
     })
 
-    it('returns a successful response when validation passes', async(done) => {
+    it('returns a successful response when validation passes', async (done) => {
       const req = httpMocks.createRequest({
         method: 'POST',
         url: '/api/pupil-feedback',
@@ -89,7 +88,7 @@ describe('Pupil Feedback controller', () => {
       done()
     })
 
-    it('saves the data', async(done) => {
+    it('saves the data', async (done) => {
       const req = httpMocks.createRequest({
         method: 'POST',
         url: '/api/pupil-feedback',

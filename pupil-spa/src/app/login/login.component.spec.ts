@@ -1,13 +1,17 @@
 import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-
+import { FormsModule } from '@angular/forms';
 import { UserService } from '../services/user/user.service';
 import { LoginComponent } from './login.component';
+import { Login } from './login.model';
 import { QuestionService } from '../services/question/question.service';
 import { QuestionServiceMock } from '../services/question/question.service.mock';
 import { WarmupQuestionService } from '../services/question/warmup-question.service';
 import { RegisterInputServiceMock } from '../services/register-input/register-input-service.mock';
 import { RegisterInputService } from '../services/register-input/registerInput.service';
+import { CheckStatusServiceMock } from '../services/check-status/check-status.service.mock';
+import { CheckStatusService } from '../services/check-status/check-status.service';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
 
 describe('LoginComponent', () => {
   let component: LoginComponent;
@@ -18,6 +22,9 @@ describe('LoginComponent', () => {
   let mockQuestionService;
   let mockWarmupQuestionService;
   let mockRegisterInputService;
+  let mockCheckStatusService;
+  let mockLoginModel;
+  let hasUnfinishedCheckSpy;
 
   beforeEach(async(() => {
     mockRouter = {
@@ -41,21 +48,29 @@ describe('LoginComponent', () => {
 
     const injector = TestBed.configureTestingModule({
       declarations: [LoginComponent],
+      imports: [FormsModule],
+      schemas: [ NO_ERRORS_SCHEMA ], // we don't need to test sub-components
       providers: [
+        { provide: Login, useValue: mockLoginModel },
         { provide: UserService, useValue: mockUserService },
         { provide: Router, useValue: mockRouter },
         { provide: QuestionService, useClass: QuestionServiceMock },
         { provide: WarmupQuestionService, useClass: QuestionServiceMock },
-        { provide: RegisterInputService, useClass: RegisterInputServiceMock }
+        { provide: RegisterInputService, useClass: RegisterInputServiceMock },
+        { provide: CheckStatusService, useClass: CheckStatusServiceMock }
       ]
     });
     mockQuestionService = injector.get(QuestionService);
     mockWarmupQuestionService = injector.get(WarmupQuestionService);
     mockRegisterInputService = injector.get(RegisterInputService);
+    mockLoginModel = injector.get(Login);
+    mockCheckStatusService = injector.get(CheckStatusService);
 
     spyOn(mockQuestionService, 'initialise');
     spyOn(mockWarmupQuestionService, 'initialise');
     spyOn(mockRegisterInputService, 'initialise');
+    hasUnfinishedCheckSpy = spyOn(mockCheckStatusService, 'hasUnfinishedCheck');
+    hasUnfinishedCheckSpy.and.returnValue(false);
   }));
 
   beforeEach(() => {
@@ -70,8 +85,8 @@ describe('LoginComponent', () => {
 
   it('should render schoolPin and pupil pin input boxes', () => {
     const compiled = fixture.debugElement.nativeElement;
-    expect(compiled.querySelector('#school-pin')).toBeTruthy();
-    expect(compiled.querySelector('#pupil-pin')).toBeTruthy();
+    expect(compiled.querySelector('#schoolPin')).toBeTruthy();
+    expect(compiled.querySelector('#pupilPin')).toBeTruthy();
   });
 
   describe('on successful login', () => {
@@ -117,6 +132,17 @@ describe('LoginComponent', () => {
       fixture.whenStable().then(() => {
         expect(mockRouter.navigate).toHaveBeenCalledWith(['sign-in-failure']);
       });
+    });
+  });
+  describe('ngOnInit', () => {
+    it('should navigate to check path with query params if an unfinished check is detected', () => {
+      hasUnfinishedCheckSpy.and.returnValue(true);
+      component.ngOnInit();
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['check'], { queryParams: { unfinishedCheck: true } });
+    });
+    it('should not navigate to check path if a completed check is detected', () => {
+      component.ngOnInit();
+      expect(mockRouter.navigate).toHaveBeenCalledTimes(0);
     });
   });
 });

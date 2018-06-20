@@ -1,7 +1,10 @@
 /** @namespace */
 
-const pupilsNotTakingCheckService = {
+const pupilIdentificationFlag = require('../services/pupil-identification-flag.service')
+const pupilDataService = require('./data-access/pupil.data.service')
+const pupilsNotTakingCheckDataService = require('../services/data-access/pupils-not-taking-check.data.service')
 
+const pupilsNotTakingCheckService = {
   /**
    * Sort columns by reason asc/desc.
    * @param pupilsList
@@ -25,30 +28,50 @@ const pupilsNotTakingCheckService = {
     })
     return sortedPupilsList
   },
+
   /**
-   * Fetch list of pupils that have reasons.
-   * @param attendanceCodes
-   * @param pupils
-   * @param highlight
-   * @returns {Promise.<Promise.<T>|Promise|Promise<any>|*>}
+   * Get pupils with and without reasons assigned.
+   * @param schoolId
+   * @param sortField
+   * @param sortDirection
+   * @returns {Promise<*>}
    */
-  formatPupilsWithReasons: async (attendanceCodes, pupils, highlight) => {
-    return Promise.all(pupils.map(async (p) => {
-      p.reason = 'N/A'
-      p.highlight = false
-      if (p.attendanceCode !== undefined && p.attendanceCode._id !== undefined) {
-        let accCode = attendanceCodes.filter(ac => JSON.stringify(ac._id) === JSON.stringify(p.attendanceCode._id))
-        if (accCode.length > 0) {
-          p.reason = accCode[0].reason
-        }
-        if (highlight) {
-          p.highlight = (highlight.filter(pp => JSON.stringify(pp) === JSON.stringify(p._id))).length > 0
-        }
+  getPupilsWithReasonsForDfeNumber: async (schoolId, sortField, sortDirection) => {
+    const pupils = await pupilDataService.sqlFindSortedPupilsWithAttendanceReasons(schoolId, sortField, sortDirection)
+    return pupilIdentificationFlag.addIdentificationFlags(pupils)
+  },
+
+  /**
+   * Get pupils only with reasons.
+   * @param schoolId
+   * @returns {Promise<*>}
+   */
+  getPupilsWithReasons: async (schoolId) => {
+    const pupils = await pupilsNotTakingCheckDataService.sqlFindPupilsWithReasons(schoolId)
+    return pupilIdentificationFlag.addIdentificationFlags(pupils)
+  },
+
+  /**
+   * Build the pupil slug based on the body object.
+   * The req.body.pupil data is posted in 3 forms:
+   * 1: string: 'abc-def' (single selection)
+   * 2: array of strings: ['abc-def', 'foo-bar'] (multiple selection)
+   * 3: object with properties/values: { 0: 'abc-def, 1: 'foo-bar' } (using checkbox "Select all")
+   * @param reqBody
+   * @returns {string}
+   */
+  getPupilSlugs: (reqBody) => {
+    let postedPupilSlugs = ''
+    if (typeof reqBody === 'object') {
+      if (Array.isArray(reqBody)) {
+        postedPupilSlugs = reqBody
+      } else {
+        postedPupilSlugs = Object.values(reqBody)
       }
-      return p
-    })).catch((error) => {
-      throw new Error(error)
-    })
+    } else if (typeof reqBody === 'string') {
+      postedPupilSlugs = [reqBody]
+    }
+    return postedPupilSlugs
   }
 }
 

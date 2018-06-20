@@ -1,28 +1,14 @@
 'use strict'
-/* global describe beforeEach afterEach it expect */
+/* global describe it expect spyOn */
 
-const sinon = require('sinon')
-require('sinon-mongoose')
+const pupilDataService = require('../../services/data-access/pupil.data.service')
+const pupilIdentificationFlag = require('../../services/pupil-identification-flag.service')
 const pupilNotTakingCheckService = require('../../services/pupils-not-taking-check.service')
-
-const attendanceCodesMock = require('../mocks/attendance-codes')
-const pupilsWithReasonsMock = require('../mocks/pupils-with-reason')
+const pupilsNotTakingCheckDataService = require('../../services/data-access/pupils-not-taking-check.data.service')
 const pupilsWithReasonsFormattedMock = require('../mocks/pupils-with-reason-formatted')
 
-/* global beforeEach, describe, it, expect */
-
 describe('Pupils are not taking the check. Service', () => {
-  let sandbox
-
-  beforeEach(() => {
-    sandbox = sinon.sandbox.create()
-  })
-
-  afterEach(() => {
-    sandbox.restore()
-  })
-
-  describe('sortPupilsByReason', () => {
+  describe('#sortPupilsByReason', () => {
     it('should return a list ordered by reason not equal to the original (as per mock order)', (done) => {
       const beforeSorting = Object.assign({}, pupilsWithReasonsFormattedMock)
       const afterSorting = pupilNotTakingCheckService.sortPupilsByReason(pupilsWithReasonsFormattedMock, 'asc')
@@ -49,37 +35,55 @@ describe('Pupils are not taking the check. Service', () => {
     })
   })
 
-  describe('formatPupilsWithReasons', () => {
-    it('should return a list of pupils that includes new field "reason"', async (done) => {
-      const afterFormatting = await pupilNotTakingCheckService.formatPupilsWithReasons(attendanceCodesMock, pupilsWithReasonsMock)
-        .then(result => {
-          return result
-        })
-      expect(afterFormatting[0].reason).toEqual('Incorrect registration')
-      expect(afterFormatting[1].reason).toEqual('Absent')
-      expect(afterFormatting[2].reason).toEqual('Left school')
-      expect(afterFormatting[3].reason).toEqual('N/A')
+  describe('#getPupilsWithReasonsForDfeNumber', () => {
+    it('should return a list of pupils', async (done) => {
+      spyOn(pupilDataService, 'sqlFindSortedPupilsWithAttendanceReasons').and.returnValue(pupilsWithReasonsFormattedMock)
+      spyOn(pupilIdentificationFlag, 'addIdentificationFlags').and.returnValue(pupilsWithReasonsFormattedMock)
+      const pupils = await pupilNotTakingCheckService.getPupilsWithReasonsForDfeNumber()
+
+      expect(pupils[0].foreName).toBe('Sarah')
+      expect(pupils[0].lastName).toBe('Connor')
+      expect(pupilDataService.sqlFindSortedPupilsWithAttendanceReasons).toHaveBeenCalled()
+      expect(pupilIdentificationFlag.addIdentificationFlags).toHaveBeenCalled()
       done()
     })
+  })
 
-    it('should return 1 record with field "highlight" equal true ', async (done) => {
-      const afterFormatting = await pupilNotTakingCheckService.formatPupilsWithReasons(attendanceCodesMock, pupilsWithReasonsMock, ['595cd5416e5cv88e69ed2632'])
-      .then(result => {
-        return result
-      })
-      expect(afterFormatting[1].highlight).toEqual(true)
+  describe('#getPupilsWithReasons', () => {
+    it('should return a list of pupils', async (done) => {
+      spyOn(pupilsNotTakingCheckDataService, 'sqlFindPupilsWithReasons').and.returnValue(pupilsWithReasonsFormattedMock)
+      spyOn(pupilIdentificationFlag, 'addIdentificationFlags').and.returnValue(pupilsWithReasonsFormattedMock)
+      const pupils = await pupilNotTakingCheckService.getPupilsWithReasons()
+
+      expect(pupils[0].foreName).toBe('Sarah')
+      expect(pupils[0].lastName).toBe('Connor')
+      expect(pupilsNotTakingCheckDataService.sqlFindPupilsWithReasons).toHaveBeenCalled()
+      expect(pupilIdentificationFlag.addIdentificationFlags).toHaveBeenCalled()
       done()
     })
+  })
 
-    it('should return 3 records with "highlight" equal false ', async (done) => {
-      const afterFormatting = await pupilNotTakingCheckService.formatPupilsWithReasons(attendanceCodesMock, pupilsWithReasonsMock, ['595cd5416e5cv88e69ed2632'])
-      .then(result => {
-        return result
-      })
-      expect(afterFormatting[0].highlight).toEqual(false)
-      expect(afterFormatting[2].highlight).toEqual(false)
-      expect(afterFormatting[3].highlight).toEqual(false)
-      done()
+  describe('#getPupilSlugs', () => {
+    it('should return a slugUrl when reqBody is a string', () => {
+      const reqBody = 'pupilSlug'
+      const expectedReqBody = [reqBody]
+      const pupilSlug = pupilNotTakingCheckService.getPupilSlugs(reqBody)
+      expect(pupilSlug).toEqual(expectedReqBody)
+    })
+
+    it('should return a slugUrl when reqBody is an object', () => {
+      const reqBody = {}
+      reqBody.pupilSlug = 'pupilSlug'
+      const expectedReqBody = ['pupilSlug']
+      const pupilSlug = pupilNotTakingCheckService.getPupilSlugs(reqBody)
+      expect(pupilSlug).toEqual(expectedReqBody)
+    })
+
+    it('should return a slugUrl when reqBody is an array', () => {
+      const reqBody = ['pupilSlug']
+      const expectedReqBody = ['pupilSlug']
+      const pupilSlug = pupilNotTakingCheckService.getPupilSlugs(reqBody)
+      expect(pupilSlug).toEqual(expectedReqBody)
     })
   })
 })

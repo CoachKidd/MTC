@@ -1,7 +1,9 @@
 export type AuditEntryType = 'WarmupStarted' | 'WarmupIntroRendered' | 'WarmupCompleteRendered'  | 'CheckStartedApiCalled' |
   'CheckStartedAPICallSucceeded' | 'CheckStartedAPICallFailed' | 'CheckSubmissionPending' | 'CheckSubmissionApiCalled' |
-  'CheckSubmissionAPICallSucceeded' | 'CheckSubmissionAPIFailed' | 'CheckComplete' | 'CheckSubmissionFailed' | 'CheckStarted' |
-  'QuestionRendered' | 'QuestionAnswered' | 'PauseRendered' | 'RefreshDetected' |'UtteranceStarted' | 'UtteranceEnded';
+  'CheckSubmissionAPICallSucceeded' | 'CheckSubmissionAPIFailed' | 'CheckSubmissionFailed' | 'CheckStarted' |
+  'QuestionRendered' | 'QuestionAnswered' | 'PauseRendered' | 'RefreshDetected' |'UtteranceStarted' | 'UtteranceEnded' |
+  'QuestionReadingStarted' | 'QuestionReadingEnded' | 'QuestionTimerStarted' | 'QuestionTimerEnded' | 'QuestionTimerCancelled' |
+  'AppError' | 'DuplicateAnswerError';
 
 export abstract class AuditEntry {
 
@@ -95,12 +97,6 @@ export class CheckSubmissionAPIFailed extends AuditEntry {
   }
 }
 
-export class CheckComplete extends AuditEntry {
-  constructor(data?: any) {
-    super('CheckComplete', new Date(), data);
-  }
-}
-
 export class CheckSubmissionFailed extends AuditEntry {
   constructor(data?: any) {
     super('CheckSubmissionFailed', new Date(), data);
@@ -122,5 +118,47 @@ export class UtteranceStarted extends AuditEntry {
 export class UtteranceEnded extends AuditEntry {
   constructor(data?: any) {
     super('UtteranceEnded', new Date(), data);
+  }
+}
+
+export class QuestionReadingStarted extends AuditEntry {
+  constructor(data?: any) {
+    super('QuestionReadingStarted', new Date(), data);
+  }
+}
+
+export class QuestionReadingEnded extends AuditEntry {
+  constructor(data?: any) {
+    super('QuestionReadingEnded', new Date(), data);
+  }
+}
+
+export class QuestionTimerStarted extends AuditEntry {
+  constructor(data?: any) {
+    super('QuestionTimerStarted', new Date(), data);
+  }
+}
+
+export class QuestionTimerEnded extends AuditEntry {
+  constructor(data?: any) {
+    super('QuestionTimerEnded', new Date(), data);
+  }
+}
+
+export class QuestionTimerCancelled extends AuditEntry {
+  constructor(data?: any) {
+    super('QuestionTimerCancelled', new Date(), data);
+  }
+}
+
+export class AppError extends AuditEntry {
+  constructor(data?: any) {
+    super('AppError', new Date(), data);
+  }
+}
+
+export class DuplicateAnswerError extends AuditEntry {
+  constructor(data?: any) {
+    super('DuplicateAnswerError', new Date(), data);
   }
 }

@@ -8,6 +8,7 @@
 </div>
 
 <form method="post" action="/test-developer/assign-form-to-window">
+    <input type="hidden" name="_csrf" value="<%= csrftoken %>" />
     <div class="grid-row">
         <div class="column-two-thirds">
             <% if (messages && messages.info && messages.info.length) { %>
@@ -27,7 +28,11 @@
             <h1 class="heading-xlarge">Assign forms</h1>
             <div class="panel panel-border-wide">
                 <p>
+                    <% if (checkFormsList && checkFormsList.length) {%>
                     Assign forms to <%= checkWindowName %>
+                    <% } else if (checkFormsList && checkFormsList.length === 0) { %>
+                    All available forms have been assigned
+                    <% }%>
                 </p>
             </div>
 

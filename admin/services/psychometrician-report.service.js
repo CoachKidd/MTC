@@ -1,21 +1,114 @@
 'use strict'
+const archiver = require('archiver')
 const csv = require('fast-csv')
 const R = require('ramda')
 const moment = require('moment')
-const momentDurationFormatSetup = require('moment-duration-format')
-momentDurationFormatSetup(moment)
+const uuidv4 = require('uuid/v4')
 
+const config = require('../config')
 // const checkWindowDataService = require('./data-access/check-window.data.service')
 const answerDataService = require('../services/data-access/answer.data.service')
-const checkFormDataService = require('./data-access/check-form.data.service')
+const azureFileDataService = require('./data-access/azure-file.data.service')
+const checkFormService = require('./check-form.service')
 const completedCheckDataService = require('./data-access/completed-check.data.service')
 const dateService = require('./date.service')
+const jobDataService = require('./data-access/job.data.service')
+const jobStatusDataService = require('./data-access/job-status.data.service')
+const jobTypeDataService = require('./data-access/job-type.data.service')
 const psUtilService = require('./psychometrician-util.service')
 const psychometricianReportCacheDataService = require('./data-access/psychometrician-report-cache.data.service')
 const pupilDataService = require('./data-access/pupil.data.service')
 const schoolDataService = require('./data-access/school.data.service')
 
 const psychometricianReportService = {}
+const psychometricianReportMaxSizeFileUploadMb = config.Data.psychometricianReportMaxSizeFileUploadMb
+
+/**
+ * Creates a new psychometricianReport record
+ * @param {Object} blobResult
+ * @param {Object} dateGenerated
+ * @return {Object}
+ */
+psychometricianReportService.create = async (blobResult, dateGenerated) => {
+  let dataInput = []
+  const fileName = `Pupil check data ${dateGenerated.format('YYYY-MM-DD HH.mm.ss')}.zip`
+  const blobFileName = blobResult && blobResult.name
+  dataInput.push(fileName, blobFileName, dateGenerated)
+  dataInput = JSON.stringify(dataInput.join(','))
+  const jobType = await jobTypeDataService.sqlFindOneByTypeCode('PSY')
+  const jobStatus = await jobStatusDataService.sqlFindOneByTypeCode('SUB')
+  const psychometricianReportRecord = {
+    jobInput: dataInput,
+    jobType_id: jobType.id,
+    jobStatus_id: jobStatus.id
+  }
+  await jobDataService.sqlCreate(psychometricianReportRecord)
+  return fileName
+}
+
+/**
+ * Creates a zip with the psychometricianReport and anomalyReport
+ * @param {Object} psychometricianReport
+ * @param {Object} anomalyReport
+ * @param {Date} dateGenerated
+ * @return {Object}
+ */
+psychometricianReportService.generateZip = async (psychometricianReport, anomalyReport, dateGenerated) => {
+  const archive = archiver('zip')
+
+  // collect data from the zip stream since uploadBlobToStorage receives the entire blob
+  const zipStreamChunks = []
+  archive.on('data', (chunk) => {
+    zipStreamChunks.push(chunk)
+  })
+
+  archive.append(psychometricianReport, { name: `Pupil check data ${dateGenerated.format('YYYY-MM-DD HH.mm.ss')}.csv` })
+  archive.append(anomalyReport, { name: `Anomaly Report ${dateGenerated.format('YYYY-MM-DD HH.mm.ss')}.csv` })
+
+  await archive.finalize()
+
+  return Buffer.concat(zipStreamChunks)
+}
+
+/**
+ * Upload stream to Blob Storage
+ * @param uploadStream
+ * @return {Promise<void>}
+ */
+psychometricianReportService.uploadToBlobStorage = async (uploadStream) => {
+  const streamLength = psychometricianReportMaxSizeFileUploadMb
+  const remoteFilename = `${uuidv4()}_${moment().format('YYYYMMDDHHmmss')}.zip`
+  return azureFileDataService.azureUploadFile('psychometricianreportupload', remoteFilename, uploadStream, streamLength)
+}
+
+/**
+ * Get existing psychometrician report file
+ * @return {Object}
+ */
+psychometricianReportService.getUploadedFile = async () => {
+  const jobType = await jobTypeDataService.sqlFindOneByTypeCode('PSY')
+  const psychometricianReport = await jobDataService.sqlFindLatestByTypeId(jobType.id)
+  if (!psychometricianReport) return
+  const jobStatusId = psychometricianReport.jobStatus_id
+  if (!jobStatusId) {
+    throw new Error('Psychometrician report record does not have a job status reference')
+  }
+  const jobStatus = await jobStatusDataService.sqlFindOneById(jobStatusId)
+  const dataInput = psychometricianReport.jobInput && JSON.parse(psychometricianReport.jobInput).split(',')
+  psychometricianReport.jobStatus = jobStatus && jobStatus.description
+  psychometricianReport.fileName = dataInput[0]
+  psychometricianReport.remoteFilename = dataInput[1]
+  psychometricianReport.dateGenerated = dataInput[2]
+  return psychometricianReport
+}
+
+/**
+ * Get existing psychometrician report file
+ * @return {Object}
+ */
+psychometricianReportService.downloadUploadedFile = async (remoteFilename, stream) => {
+  return azureFileDataService.azureDownloadFileStream('psychometricianreportupload', remoteFilename, stream)
+}
 
 /**
  * Return the CSV file as a string
@@ -29,10 +122,12 @@ psychometricianReportService.generateReport = async function () {
     output.push(obj.jsonData)
   }
 
+  const headers = psychometricianReportService.produceReportDataHeaders(results)
+
   return new Promise((resolve, reject) => {
     csv.writeToString(
       output,
-      {headers: true},
+      {headers: headers},
       function (err, data) {
         if (err) { reject(err) }
         resolve(data)
@@ -74,27 +169,32 @@ psychometricianReportService.batchProduceCacheData = async function (batchIds) {
     throw new Error('Invalid arg: batchIds')
   }
 
-  const completedChecks = await completedCheckDataService.sqlFindByIds(batchIds)
+  const checks = await completedCheckDataService.sqlFindByIds(batchIds)
 
-  if (!completedChecks || !Array.isArray(completedChecks) || !completedChecks.length) {
+  if (!checks || !Array.isArray(checks) || !checks.length) {
     throw new Error('Failed to find any checks')
   }
 
   // Fetch all pupils, checkForms, checkWindows or the checks
-  const pupils = await pupilDataService.sqlFindByIds(completedChecks.map(x => x.pupil_id))
-  const checkForms = await checkFormDataService.sqlFindByIds(completedChecks.map(x => x.checkForm_id))
+  const pupilIds = checks.map(x => x.pupil_id)
+  const pupils = await pupilDataService.sqlFindByIds(pupilIds)
+  const checkForms = await checkFormService.getCheckFormsByIds(checks.map(x => x.checkForm_id))
   const schools = await schoolDataService.sqlFindByIds(pupils.map(x => x.school_id))
-  // const checkWindows = await checkWindowDataService.sqlFindByIds(completedChecks.map(x => x.check))
 
   // answers is an object with check.ids as keys and arrays of answers for that check as values
-  const answers = await answerDataService.sqlFindByCheckIds(completedChecks.map(x => x.id))
+  const answers = await answerDataService.sqlFindByCheckIds(checks.map(x => x.id))
 
   const psReportData = []
 
-  for (let check of completedChecks) {
+  for (let check of checks) {
     const pupil = pupils.find(x => x.id === check.pupil_id)
     const checkForm = checkForms.find(x => x.id === check.checkForm_id)
     const school = schools.find(x => x.id === pupil.school_id)
+    // Fetch check ids based on pupil
+    const pupilChecks = checks.filter(c => c.pupil_id === pupil.id)
+    // Find check index from pupil's checks
+    check.checkCount = pupilChecks.findIndex(c => check.id === c.id) + 1
+    check.checkStatus = check.data && Object.keys(check.data).length > 0 ? 'Completed' : 'Started, not completed'
     // Generate one line of the report
     const data = this.produceReportData(check, answers[check.id], pupil, checkForm, school)
     psReportData.push({ check_id: check.id, jsonData: data })
@@ -115,16 +215,31 @@ psychometricianReportService.batchProduceCacheData = async function (batchIds) {
  * Generate the ps report from the populated check object
  * CompletedCheck: check + the Check object fully populated with pupil (+ school), checkWindow
  * and checkForm
- * @param check
+ * @param {Object} check
+ * @param {Array} markedAnswers
+ * @param {Object} pupil
+ * @param {Object} checkForm
+ * @param {Object} school
  * @return {{Surname: string, Forename: string, MiddleNames: string, DOB: *, Gender, PupilId, FormMark: *, School Name, Estab, School URN: (School.urn|{type, trim, min}|*|any|string), LA Num: (number|School.leaCode|{type, required, trim, max, min}|leaCode|*), AttemptId, Form ID, TestDate: *, TimeStart: string, TimeComplete: *, TimeTaken: string}}
  */
 psychometricianReportService.produceReportData = function (check, markedAnswers, pupil, checkForm, school) {
+  const userAgent = R.path(['data', 'device', 'navigator', 'userAgent'], check)
+  const config = R.path(['data', 'config'], check)
+
   const psData = {
     'DOB': dateService.formatUKDate(pupil.dateOfBirth),
     'Gender': pupil.gender,
     'PupilId': pupil.upn,
+    'Forename': pupil.foreName,
+    'Surname': pupil.lastName,
 
     'FormMark': psUtilService.getMark(check),
+    'GroupTiming': R.pathOr('', ['questionTime'], config),
+    'PauseLength': R.pathOr('', ['loadingTime'], config),
+    'SpeechSynthesis': R.pathOr('', ['speechSynthesis'], config),
+
+    'DeviceType': psUtilService.getDevice(userAgent),
+    'BrowserType': psUtilService.getBrowser(userAgent),
 
     'School Name': school.name,
     'Estab': school.estabCode,
@@ -134,51 +249,67 @@ psychometricianReportService.produceReportData = function (check, markedAnswers,
     'AttemptId': check.checkCode,
     'Form ID': checkForm.name,
     'TestDate': dateService.reverseFormatNoSeparator(check.pupilLoginDate),
+    'CheckStatus': check.checkStatus,
+    'CheckCount': check.checkCount,
 
     // TimeStart should be when the user clicked the Start button.
-    'TimeStart': dateService.formatTimeWithSeconds(
-      moment(psUtilService.getClientTimestampFromAuditEvent('CheckStarted', check))
-    ),
+    'TimeStart': dateService.formatTimeWithSeconds(moment(psUtilService.getClientTimestampFromAuditEvent('CheckStarted', check))),
     // TimeComplete should be when the user presses Enter or the question Times out on the last question.
     // We log this as CheckComplete in the audit log
-    'TimeComplete': dateService.formatTimeWithSeconds(
-      moment(psUtilService.getClientTimestampFromAuditEvent('CheckSubmissionPending', check))
-    ),
+    'TimeComplete': dateService.formatTimeWithSeconds(moment(psUtilService.getClientTimestampFromAuditEvent('CheckSubmissionPending', check))),
     // TimeTaken should TimeComplete - TimeStart - but we don't know TimeStart yet
-    'TimeTaken':
-      moment.duration(
-        moment(psUtilService.getClientTimestampFromAuditEvent('CheckSubmissionPending', check))
-        .diff(moment(psUtilService.getClientTimestampFromAuditEvent('CheckStarted', check)))
-      ).format('HH:mm:ss', {trim: false})
+    'TimeTaken': psUtilService.getClientTimestampDiffFromAuditEvents('CheckStarted', 'CheckSubmissionPending', check)
   }
 
   // Add information for each question asked
   const p = (idx) => 'Q' + (idx + 1).toString()
-  check.data.answers.forEach((ans, idx) => {
-    // We don't store the questionNumber in the pupil answer data in the SPA so we have to look up the
-    // question using factor1 and factor2.
-    // TODO: allocate questionNumber or QuestionId in the SPA answer data packet
-    const markedAnswer = markedAnswers.find(a => a.factor1 === ans.factor1 && a.factor2 === ans.factor2)
-
-    const qInputs = R.pathOr([], ['data', 'inputs', idx], check)
-    psData[p(idx) + 'ID'] = ans.factor1 + ' x ' + ans.factor2
-    psData[p(idx) + 'Response'] = ans.answer
-    psData[p(idx) + 'K'] = psUtilService.getUserInput(qInputs)
-    psData[p(idx) + 'Sco'] = psUtilService.getScore(markedAnswer)
-    psData[p(idx) + 'ResponseTime'] = psUtilService.getResponseTime(qInputs)
-    psData[p(idx) + 'TimeOut'] = psUtilService.getTimeoutFlag(qInputs)
-    psData[p(idx) + 'TimeOutResponse'] = psUtilService.getTimeoutWithNoResponseFlag(qInputs, ans)
-    psData[p(idx) + 'TimeOutSco'] = psUtilService.getTimeoutWithCorrectAnswer(qInputs, markedAnswer)
-    psData[p(idx) + 'tLoad'] = '' // data structure should be made more analysis friendly // TODO: fix incoming array to make it filterable
-    psData[p(idx) + 'tFirstKey'] = psUtilService.getFirstInputTime(qInputs)
-    psData[p(idx) + 'tLastKey'] = psUtilService.getLastAnswerInputTime(qInputs)
-    psData[p(idx) + 'OverallTime'] = '' // depends on tLoad
-    psData[p(idx) + 'RecallTime'] = '' // depends on tLoad
-    psData[p(idx) + 'TimeComplete'] = psUtilService.getLastAnswerInputTime(qInputs)
-    psData[p(idx) + 'TimeTaken'] = '' // depends on tLoad
-  })
-
+  if (check.data && Object.keys(check.data).length > 0) {
+    checkForm.formData.forEach((question, idx) => {
+      // TODO: allocate questionNumber or QuestionId in the SPA answer data packet
+      const markedAnswer = markedAnswers.find(a => a.factor1 === question.f1 && a.factor2 === question.f2)
+      const inputs = R.filter(
+        i => i.sequenceNumber === (idx + 1) &&
+        i.question === `${question.f1}x${question.f2}`,
+        R.pathOr([], ['data', 'inputs'], check))
+      const audits = R.pathOr([], ['data', 'audit'], check)
+      const ans = check.data.answers.find(x => x.sequenceNumber === (idx + 1) && question.f1 === x.factor1 && question.f2 === x.factor2)
+      psData[p(idx) + 'ID'] = question.f1 + ' x ' + question.f2
+      psData[p(idx) + 'Response'] = ans ? ans.answer : ''
+      psData[p(idx) + 'InputMethod'] = psUtilService.getInputMethod(inputs)
+      psData[p(idx) + 'K'] = psUtilService.getUserInput(inputs)
+      psData[p(idx) + 'Sco'] = markedAnswer ? psUtilService.getScore(markedAnswer) : ''
+      psData[p(idx) + 'ResponseTime'] = ans ? psUtilService.getResponseTime(inputs, ans.answer) : ''
+      psData[p(idx) + 'TimeOut'] = psUtilService.getTimeoutFlag(ans.answer, inputs)
+      psData[p(idx) + 'TimeOutResponse'] = ans ? psUtilService.getTimeoutWithNoResponseFlag(inputs, ans) : ''
+      psData[p(idx) + 'TimeOutSco'] = markedAnswer ? psUtilService.getTimeoutWithCorrectAnswer(inputs, markedAnswer) : ''
+      const tLoad = psUtilService.getLoadTime(idx + 1, audits)
+      psData[p(idx) + 'tLoad'] = tLoad
+      const tFirstKey = ans ? psUtilService.getFirstInputTime(inputs, ans.answer) : ''
+      psData[p(idx) + 'tFirstKey'] = tFirstKey
+      const tLastKey = ans ? psUtilService.getLastAnswerInputTime(inputs, ans.answer) : ''
+      psData[p(idx) + 'tLastKey'] = tLastKey
+      psData[p(idx) + 'OverallTime'] = psUtilService.getOverallTime(tLastKey, tLoad) // seconds
+      psData[p(idx) + 'RecallTime'] = psUtilService.getRecallTime(tLoad, tFirstKey)
+    })
+  }
   return psData
+}
+
+/**
+ * Returns the CSV headers
+ * @param {Array} results
+ * @returns {Array}
+ */
+psychometricianReportService.produceReportDataHeaders = function (results) {
+  // If there are no checks, there will be an empty file
+  if (results.length === 0) return []
+  // Fetch the first completed check to store the keys as headers
+  const completedCheck = results.find(c => c.jsonData.hasOwnProperty('Q1ID'))
+  if (completedCheck) {
+    return Object.keys(completedCheck.jsonData)
+  }
+  // Alternatively return the first check keys
+  return Object.keys(results[0].jsonData)
 }
 
 /**

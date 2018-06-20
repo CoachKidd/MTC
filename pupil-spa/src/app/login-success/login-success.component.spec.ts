@@ -1,15 +1,28 @@
 import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
+import { HttpModule } from '@angular/http';
 
+import { DeviceService } from '../services/device/device.service';
 import { LoginSuccessComponent } from './login-success.component';
 import * as responseMock from '../login.response.mock.json';
 import { StorageService } from '../services/storage/storage.service';
+import { WindowRefService } from '../services/window-ref/window-ref.service';
+import { SpeechService } from '../services/speech/speech.service';
+import { SpeechServiceMock } from '../services/speech/speech.service.mock';
+import { QuestionService } from '../services/question/question.service';
+import { QuestionServiceMock } from '../services/question/question.service.mock';
+import { UserService } from '../services/user/user.service';
+import { AuditService } from '../services/audit/audit.service';
+import { AppUsageService } from '../services/app-usage/app-usage.service';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
 
 describe('LoginSuccessComponent', () => {
   let component: LoginSuccessComponent;
   let fixture: ComponentFixture<LoginSuccessComponent>;
   let store: {};
   let mockRouter;
+  let appUsageService;
+  let storageService;
 
   beforeEach(() => {
     mockRouter = {
@@ -17,14 +30,26 @@ describe('LoginSuccessComponent', () => {
     };
 
     const injector = TestBed.configureTestingModule({
+      imports: [HttpModule],
+      schemas: [ NO_ERRORS_SCHEMA ], // we don't need to test sub-components
       declarations: [LoginSuccessComponent],
       providers: [
+        DeviceService,
         { provide: Router, useValue: mockRouter },
-        StorageService
+        StorageService,
+        { provide: SpeechService, useClass: SpeechServiceMock },
+        { provide: QuestionService, useClass: QuestionServiceMock },
+        UserService,
+        AuditService,
+        WindowRefService,
+        AppUsageService
       ]
     });
-    const storageService = injector.get(StorageService);
+    storageService = injector.get(StorageService);
+    appUsageService = injector.get(AppUsageService);
     injector.compileComponents();
+
+    store = {};
 
     spyOn(storageService, 'getItem').and.callFake(function (key) {
       return JSON.stringify(responseMock);
@@ -35,6 +60,7 @@ describe('LoginSuccessComponent', () => {
     spyOn(storageService, 'clear').and.callFake(function () {
       store = {};
     });
+    spyOn(appUsageService, 'increment');
   });
 
   beforeEach(() => {
@@ -45,6 +71,7 @@ describe('LoginSuccessComponent', () => {
 
   it('should be created', () => {
     expect(component).toBeTruthy();
+    expect(appUsageService.increment).toHaveBeenCalledTimes(1);
   });
 
   it('asks the user to confirm their details', () => {
@@ -52,9 +79,10 @@ describe('LoginSuccessComponent', () => {
     expect(compiled.querySelector('p.lede').textContent).toMatch(/Check your details are correct/);
   });
 
-  it('redirects to warm up introduction page', () => {
+  it('redirects to warm up introduction page and removes pupil data', () => {
     component.onClick();
     expect(mockRouter.navigate).toHaveBeenCalledWith(['check-start']);
+    expect(storageService.setItem).toHaveBeenCalledTimes(1);
   });
 
 });

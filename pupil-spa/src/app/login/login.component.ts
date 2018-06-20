@@ -5,6 +5,8 @@ import { UserService } from '../services/user/user.service';
 import { QuestionService } from '../services/question/question.service';
 import { WarmupQuestionService } from '../services/question/warmup-question.service';
 import { RegisterInputService } from '../services/register-input/registerInput.service';
+import { CheckStatusService } from '../services/check-status/check-status.service';
+import { Login } from './login.model';
 
 @Component({
   selector: 'app-login',
@@ -14,16 +16,22 @@ import { RegisterInputService } from '../services/register-input/registerInput.s
 export class LoginComponent implements OnInit {
 
   private submitted: boolean;
+  public loginModel = new Login('', '');
 
   constructor(
     private userService: UserService,
     private router: Router,
     private questionService: QuestionService,
     private warmupQuestionService: WarmupQuestionService,
-    private registerInputService: RegisterInputService
+    private registerInputService: RegisterInputService,
+    private checkStatusService: CheckStatusService
   ) { }
 
   ngOnInit() {
+    const hasUnfinishedCheck = this.checkStatusService.hasUnfinishedCheck();
+    if (hasUnfinishedCheck) {
+      this.router.navigate(['check'], { queryParams: { unfinishedCheck: true } });
+    }
     this.submitted = false;
   }
 

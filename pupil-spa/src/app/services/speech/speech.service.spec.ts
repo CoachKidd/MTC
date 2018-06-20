@@ -18,9 +18,27 @@ describe('SpeechService', () => {
     });
   });
 
-  it('should be created', inject([SpeechService], (service: SpeechService) => {
-    expect(service).toBeTruthy();
-  }));
+  describe('constructor', () => {
+    beforeEach(() => {
+      spyOn(window, 'addEventListener');
+    });
+
+    it('should be created', inject([SpeechService], (service: SpeechService) => {
+      expect(service).toBeTruthy();
+      expect(window.addEventListener).toHaveBeenCalledTimes(2);
+    }));
+  });
+
+  describe('#removeAutoplayRestrictions', () => {
+    beforeEach(() => {
+      spyOn(window, 'addEventListener').and.callFake((event, fun) => fun());
+      spyOn(window, 'removeEventListener');
+    });
+
+    it('should remove its event listeners', inject([SpeechService], (service: SpeechService) => {
+      expect(window.removeEventListener).toHaveBeenCalledTimes(2 * 2);
+    }));
+  });
 
   describe('#isSupported', () => {
     it('returns true if the api is supported', inject([SpeechService], (service: SpeechService) => {
@@ -39,8 +57,12 @@ describe('SpeechService', () => {
       expect(typeof service.speak).toBe('function');
     }));
 
-    it('calls the audit service on start and end', inject([SpeechService], (service: SpeechService) => {
+    it('calls the audit service on start and end', inject([SpeechService], async (service: SpeechService) => {
       spyOn(auditServiceMock, 'addEntry').and.callThrough();
+      // Mock the setTimeout method to get the results instantly
+      spyOn(window, 'setTimeout').and.callFake((fun, time) => {
+        fun();
+      });
       // We need to mock out the actual speech interface, as otherwise this test will emit speech
       spyOn(window.speechSynthesis, 'speak').and.callFake((utterance) => {
         // call the onstart and onend function if they exist
@@ -51,7 +73,36 @@ describe('SpeechService', () => {
           utterance.onend();
         }
       });
-      service.speak('9 times 9');
+      await service.speak('9 times 9');
+      expect(window.setTimeout).toHaveBeenCalledTimes(1);
+      expect(auditServiceMock.addEntry).toHaveBeenCalledTimes(2);
+      expect(window.speechSynthesis.speak).toHaveBeenCalledTimes(1);
+    }));
+  });
+
+  describe ('#speakQuestion', () => {
+    it('should have a speakQuestion method', inject([SpeechService], (service: SpeechService) => {
+      expect(typeof service.speakQuestion).toBe('function');
+    }));
+
+    it('calls the audit service on start and end', inject([SpeechService], async (service: SpeechService) => {
+      spyOn(auditServiceMock, 'addEntry').and.callThrough();
+      // Mock the setTimeout method to get the results instantly
+      spyOn(window, 'setTimeout').and.callFake((fun, time) => {
+        fun();
+      });
+      // We need to mock out the actual speech interface, as otherwise this test will emit speech
+      spyOn(window.speechSynthesis, 'speak').and.callFake((utterance) => {
+        // call the onstart and onend function if they exist
+        if (utterance.onstart && typeof utterance.onstart === 'function') {
+          utterance.onstart();
+        }
+        if (utterance.onend && typeof utterance.onend === 'function') {
+          utterance.onend();
+        }
+      });
+      await service.speak('9 times 9');
+      expect(window.setTimeout).toHaveBeenCalledTimes(1);
       expect(auditServiceMock.addEntry).toHaveBeenCalledTimes(2);
       expect(window.speechSynthesis.speak).toHaveBeenCalledTimes(1);
     }));

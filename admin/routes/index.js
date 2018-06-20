@@ -8,13 +8,14 @@ const config = require('../config')
 const rolesConfig = require('../roles-config')
 const isAuthenticated = require('../authentication/middleware')
 const contactPage = require('../controllers/contact')
+const privacyPage = require('../controllers/privacy')
 const { getServiceManagerHome } = require('../controllers/service-manager')
+const checkFormController = require('../controllers/check-form')
 const { home,
   getSignIn,
   postSignIn,
   getSignOut,
   getSignInFailure,
-  postAuth,
   getUnauthorised } = require('../controllers/authentication')
 
 /* GET home page. */
@@ -24,9 +25,11 @@ router.get('/sign-in', (req, res) => getSignIn(req, res))
 
 /* Login validation */
 const passportStrategy = config.NCA_TOOLS_AUTH_URL && config.NCA_TOOLS_AUTH_URL.length > 0 ? 'custom' : 'local'
-router.post('/sign-in', (req, res, next) => {
-  next()
-}, passport.authenticate(passportStrategy, { failureRedirect: '/sign-in-failure' }),
+router.post('/sign-in',
+  (req, res, next) => {
+    next()
+  },
+  passport.authenticate(passportStrategy, { failureRedirect: '/sign-in-failure' }),
   (req, res) => postSignIn(req, res)
 )
 
@@ -37,11 +40,12 @@ router.get('/sign-in-failure', (req, res) => getSignInFailure(req, res))
 /* Unauthorised */
 router.get('/unauthorised', (req, res) => getUnauthorised(req, res))
 /* Test developer routing */
-router.get('/test-developer', isAuthenticated(rolesConfig.ROLE_TEST_DEVELOPER), (req, res, next) => getServiceManagerHome(req, res, next))
+router.get('/test-developer', isAuthenticated(rolesConfig.ROLE_TEST_DEVELOPER), (req, res, next) => checkFormController.getTestDeveloperHomePage(req, res, next))
 /* Service manager routing */
 router.get('/service-manager', isAuthenticated(rolesConfig.ROLE_SERVICE_MANAGER), (req, res, next) => getServiceManagerHome(req, res, next))
 /* Contact page */
 router.get('/contact', (req, res, next) => contactPage(req, res))
+router.get('/privacy', (req, res, next) => privacyPage(req, res))
 /* Health check */
 async function getPing (req, res) {
   // get build number from /build.txt

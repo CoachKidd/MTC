@@ -3,10 +3,15 @@ import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 import { WarmupCompleteComponent } from './warmup-complete.component';
 import { AuditService } from '../services/audit/audit.service';
 import { AuditServiceMock } from '../services/audit/audit.service.mock';
+import { QuestionService } from '../services/question/question.service';
+import { QuestionServiceMock } from '../services/question/question.service.mock';
+import { SpeechService } from '../services/speech/speech.service';
+import { SpeechServiceMock } from '../services/speech/speech.service.mock';
 import { SubmissionServiceMock } from '../services/submission/submission.service.mock';
 import { SubmissionService } from '../services/submission/submission.service';
 import { WarmupCompleteRendered, AuditEntry, CheckStartedApiCalled } from '../services/audit/auditEntry';
 import 'rxjs/add/operator/toPromise';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
 
 describe('WarmupCompleteComponent', () => {
   let component: WarmupCompleteComponent;
@@ -19,8 +24,11 @@ describe('WarmupCompleteComponent', () => {
   beforeEach(async(() => {
     TestBed.configureTestingModule({
       declarations: [ WarmupCompleteComponent ],
+      schemas: [ NO_ERRORS_SCHEMA ], // we don't need to test sub-components
       providers: [
         { provide: AuditService, useClass: AuditServiceMock},
+        { provide: SpeechService, useClass: SpeechServiceMock },
+        { provide: QuestionService, useClass: QuestionServiceMock },
         { provide: SubmissionService, useClass: SubmissionServiceMock }
       ]
     })

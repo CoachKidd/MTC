@@ -1,30 +1,12 @@
 'use strict'
 
 const TYPES = require('tedious').TYPES
-const winston = require('winston')
-
-const CheckForm = require('../../models/check-form')
+const R = require('ramda')
 const sqlService = require('./sql.service')
-
 const table = '[checkForm]'
 
 const checkFormDataService = {
   /**
-   * Get form by id (if passed), when isDeleted is false.
-   * Return Mongoose object.
-   * @deprecated use sqlFindActiveForm
-   * @param id
-   */
-  getActiveForm: (id) => {
-    winston.warn('check-form.data.service.getActiveForm is deprecated')
-    let query = {'isDeleted': false}
-    if (id) {
-      query = Object.assign(query, {'_id': id})
-    }
-    return CheckForm.findOne(query).exec()
-  },
-
-    /**
    * Get active forms
    * This will be deprecated when the form choice algorithm is introduced
    * @param id
@@ -63,42 +45,6 @@ const checkFormDataService = {
     }
     return sqlService.query(sql, params)
   },
-
-  /**
-   * Get check form when isDeleted is false.
-   * Return plain javascript object.
-   * This method will not be refactored as all calls should be repointed to sqlFindActiveFormById.
-   * @deprecated use sqlFindActiveFormById
-   * @returns {Promise}
-   */
-  getActiveFormPlain: (id) => {
-    winston.warn('check-form.data.service.getActiveFormPlain is deprecated')
-    let query = {'isDeleted': false}
-    if (id) {
-      query = Object.assign(query, {'_id': id})
-    }
-    return CheckForm.findOne(query).lean().exec()
-  },
-
-  /**
-   * Fetch active forms (forms not soft-deleted)
-   * @param query
-   * @param sortField
-   * @param sortDirection
-   * @deprecated use sqlFetchSortedActiveFormsByName
-   * @returns {Promise.<void>}
-   */
-  fetchSortedActiveForms: async (query, sortField, sortDirection) => {
-    let sort = {}
-    let q = query
-    winston.warn('check-form.data.service.fetchSortedActiveForms is deprecated')
-    if (sortField && sortDirection) {
-      sort[sortField] = sortDirection
-    }
-    q.isDeleted = false
-    return CheckForm.find(q).sort(sort).lean().exec()
-  },
-
   /**
    * Fetch active forms (not deleted)
    * sorted by name
@@ -114,23 +60,28 @@ const checkFormDataService = {
     const params = []
     let sql = ''
     if (windowId) {
+      // Note: we should not be able to unassign forms from a currently running check window
+      // Here we calculate it on the fly from the database.
       sql = `
-      SELECT * 
-      FROM ${sqlService.adminSchema}.[checkForm] 
-      WHERE isDeleted=0 
-      AND [id] IN (
-        SELECT checkForm_id 
-        FROM checkFormWindow 
-        WHERE checkWindow_id=@windowId
-      )
-      ORDER BY [name] ${sortOrder}`
+      SELECT
+        cf.*,
+      IIF(cw.checkStartDate > SYSDATETIMEOFFSET(), /* TRUE */ cast(1 as bit) , /* FALSE */ cast(0 as bit)) as guiCanUnassign
+      FROM ${sqlService.adminSchema}.[checkForm] cf
+      LEFT JOIN ${sqlService.adminSchema}.[checkFormWindow] cfw ON (cf.id = cfw.checkForm_id)
+      LEFT JOIN ${sqlService.adminSchema}.[checkWindow] cw ON (cfw.checkWindow_id = cw.id)
+      WHERE cf.isDeleted = 0
+      AND cw.id = @windowId   
+      ORDER BY cf.name ASC`
+
       params.push({
         name: 'windowId',
         value: windowId,
         type: TYPES.Int
       })
     } else {
-      sql = `SELECT * FROM ${sqlService.adminSchema}.[checkForm] WHERE isDeleted=0 ORDER BY [name] ${sortOrder}`
+      sql = `SELECT * FROM ${sqlService.adminSchema}.[checkForm] 
+             WHERE isDeleted=0 
+             ORDER BY [name] ${sortOrder}`
     }
     return sqlService.query(sql, params)
   },
@@ -147,7 +98,7 @@ const checkFormDataService = {
     return sqlService.query(sql, params)
   },
 
-    /**
+  /**
    * Fetch active forms (not deleted)
    * sorted by window
    * @returns {Promise<*>}
@@ -182,21 +133,7 @@ const checkFormDataService = {
     }
     return sqlService.query(sql, params)
   },
-
   /**
-   * Create.
-   * @param data
-   * @deprecated use sqlCreate
-   * @returns {Promise<*>}
-   */
-  create: async (data) => {
-    winston.warn('check-form.data.service.create is deprecated')
-    const checkForm = new CheckForm(data)
-    await checkForm.save()
-    return checkForm.toObject()
-  },
-
-    /**
    * Create check form
    * @param checkForm
    * @returns {Promise<*>}
@@ -204,20 +141,7 @@ const checkFormDataService = {
   sqlCreate: (checkForm) => {
     return sqlService.create('[checkForm]', checkForm)
   },
-
   /**
-   * Find check form by name.
-   * @param formName
-   * @deprecated use sqlFindCheckFormByName
-   * @returns {Promise|*}
-   */
-  findCheckFormByName: (formName) => {
-    winston.warn('check-form.data.service.findCheckFormByName is deprecated')
-    let query = { 'isDeleted': false, 'name': formName }
-    return CheckForm.findOne(query).lean().exec()
-  },
-
-    /**
    * Find check form by name.
    * @param formName
    * @returns {Promise|*}
@@ -299,6 +223,45 @@ const checkFormDataService = {
     const whereClause = 'WHERE id IN (' + paramIdentifiers.join(', ') + ')'
     const sql = [select, whereClause].join(' ')
     return sqlService.query(sql, params)
+  },
+
+  /**
+   * Fetch check form by id.
+   * @param id
+   * @returns {Promise.<void>}
+   */
+  sqlFindOneById: async (id) => {
+    const sql = `SELECT * FROM ${sqlService.adminSchema}.${table} WHERE isDeleted=0 AND id=@id`
+    const params = [
+      {
+        name: 'id',
+        value: id,
+        type: TYPES.Int
+      }
+    ]
+    const rows = await sqlService.query(sql, params)
+    return R.head(rows)
+  },
+
+  /**
+   * Fetch check form with parsed check form data by id.
+   * @param id
+   * @returns {Promise.<void>}
+   */
+  sqlFindOneParsedById: async (id) => {
+    const params = [
+      {
+        name: 'id',
+        value: id,
+        type: TYPES.Int
+      }
+    ]
+    const sql = `SELECT * FROM ${sqlService.adminSchema}.${table} WHERE isDeleted=0 AND id=@id`
+
+    const result = await sqlService.query(sql, params)
+
+    const first = R.head(result)
+    return R.assoc('formData', (JSON.parse(first.formData)), first)
   }
 }
 

@@ -26,6 +26,7 @@
         <h1 class="heading-xlarge"><%= checkWindowName %></h1>
 
         <form method="post" action="/test-developer/unassign-form">
+            <input type="hidden" name="_csrf" value="<%= csrftoken %>" />
             <% if (Array.isArray(checkFormsList) && checkFormsList.length > 0) { %>
             <table class="spacious" id="assignFormToWindowList" role="group">
                 <thead>
@@ -41,7 +42,9 @@
                             <%= form.name %>
                         </td>
                         <td class="align-right">
+                            <% if (form.guiCanUnassign === true) { %>
                             <button class="link-button" name="checkFormId" value="<%= form.id %>">Remove from window</button>
+                            <% } %>
                         </td>
                     </tr>
                     <% }) %>

@@ -1,11 +1,16 @@
 'use strict'
 
+const moment = require('moment')
 const path = require('path')
 const fs = require('fs-extra')
 const checkFormService = require('../services/check-form.service')
+const checkProcessingService = require('../services/check-processing.service')
 const checkWindowService = require('../services/check-window.service')
 const checkWindowDataService = require('../services/data-access/check-window.data.service')
+const dateService = require('../services/date.service')
 const sortingAttributesService = require('../services/sorting-attributes.service')
+const psychometricianReportService = require('../services/psychometrician-report.service')
+const anomalyReportService = require('../services/anomaly-report.service')
 const winston = require('winston')
 
 /**
@@ -265,7 +270,7 @@ const assignCheckFormsToWindowsPage = async (req, res, next) => {
   }
 
   try {
-    checkWindowsData = await checkWindowService.getCurrentCheckWindowsAndCountForms()
+    checkWindowsData = await checkWindowService.getFutureCheckWindowsAndCountForms()
   } catch (error) {
     return next(error)
   }
@@ -298,10 +303,14 @@ const assignCheckFormToWindowPage = async (req, res, next) => {
     return next(error)
   }
 
-  try {
-    checkFormsList = await checkFormService.getUnassignedFormsForCheckWindow(checkWindow.id)
-  } catch (error) {
-    return next(error)
+  if (moment().isBefore(checkWindow.checkStartDate)) {
+    try {
+      checkFormsList = await checkFormService.getUnassignedFormsForCheckWindow(checkWindow.id)
+    } catch (error) {
+      return next(error)
+    }
+  } else {
+    checkFormsList = []
   }
 
   req.breadcrumbs('Assign forms to check windows', '/test-developer/assign-form-to-window')
@@ -357,7 +366,7 @@ const saveAssignCheckFormsToWindow = async (req, res, next) => {
     return next(error)
   }
 
-  req.flash('info', `${totalForms} forms have been assigned to ${checkWindowName}`)
+  req.flash('info', `${totalForms} ${totalForms === 1 ? 'form has' : 'forms have'} been assigned to ${checkWindowName}`)
   req.flash('checkWindowId', checkWindowId)
   res.redirect('/test-developer/assign-form-to-window')
 }
@@ -433,7 +442,97 @@ const unassignCheckFormFromWindow = async (req, res, next) => {
   res.redirect('/test-developer/assign-form-to-window')
 }
 
+/**
+ * Download pupil check data view.
+ * @param req
+ * @param res
+ * @param next
+ * @returns {Promise.<void>}
+ */
+const getDownloadPupilCheckData = async (req, res, next) => {
+  res.locals.pageTitle = 'Download pupil check data'
+  req.breadcrumbs(res.locals.pageTitle)
+
+  let psychometricianReport
+  try {
+    psychometricianReport = await psychometricianReportService.getUploadedFile()
+  } catch (error) {
+    return next(error)
+  }
+
+  if (psychometricianReport) {
+    psychometricianReport.fileName = psychometricianReport.fileName.replace(/\.zip$/, '')
+    psychometricianReport.dateGenerated = dateService.formatDateAndTime(psychometricianReport.dateGenerated)
+  }
+
+  res.render('test-developer/download-pupil-check-data', {
+    breadcrumbs: req.breadcrumbs(),
+    psychometricianReport
+  })
+}
+
+/**
+ * Download pupil check data ZIP file.
+ * @param req
+ * @param res
+ * @param next
+ * @returns {Promise.<void>}
+ */
+const getFileDownloadPupilCheckData = async (req, res, next) => {
+  let psychometricianReport
+  try {
+    psychometricianReport = await psychometricianReportService.getUploadedFile()
+    if (!psychometricianReport) {
+      return res.redirect('/test-developer/download-pupil-check-data')
+    }
+  } catch (error) {
+    req.flash('error', error.message)
+    return res.redirect('/test-developer/download-pupil-check-data')
+  }
+
+  try {
+    res.setHeader('Content-type', 'application/zip')
+    res.setHeader('Content-disposition', `attachment; filename=${psychometricianReport.fileName}`)
+
+    await psychometricianReportService.downloadUploadedFile(psychometricianReport.remoteFilename, res)
+  } catch (error) {
+    return next(error)
+  }
+}
+
+/**
+ * Generate latest pupil check data.
+ * @param req
+ * @param res
+ * @param next
+ * @returns {Promise.<void>}
+ */
+const getGenerateLatestPupilCheckData = async (req, res, next) => {
+  try {
+    await checkProcessingService.process()
+
+    const dateGenerated = moment()
+    const psychometricianReport = await psychometricianReportService.generateReport()
+    const anomalyReport = await anomalyReportService.generateReport()
+
+    const generatedZip = await psychometricianReportService.generateZip(psychometricianReport, anomalyReport, dateGenerated)
+    const blobResult = await psychometricianReportService.uploadToBlobStorage(generatedZip)
+
+    const fileName = await psychometricianReportService.create(blobResult, dateGenerated)
+
+    return res.status(200).json({
+      fileName: fileName.replace(/\.zip$/, ''),
+      dateGenerated: dateService.formatDateAndTime(dateGenerated)
+    })
+  } catch (error) {
+    return res.status(500).json({ error: error.message })
+  }
+}
+
 module.exports = {
+  getDownloadPupilCheckData,
+  getFileDownloadPupilCheckData,
+  getGenerateLatestPupilCheckData,
   getTestDeveloperHomePage,
   uploadAndViewFormsPage,
   removeCheckForm,
