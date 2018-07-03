@@ -14,8 +14,8 @@ Before("@timer_reset") do
   step "I am logged in with a service manager"
   step 'I am on the admin page'
   step 'I am on the check settings page'
-  check_settings_page.update_question_time_limit(5)
-  check_settings_page.update_loading_time_limit(2)
+  check_settings_page.update_question_time_limit(6)
+  check_settings_page.update_loading_time_limit(3)
 end
 
 Before("@add_5_pupils") do
@@ -92,6 +92,12 @@ end
 
 Before("@reset_checks") do
   SqlDbHelper.delete_all_checks
+end
+
+After("@delete_census") do
+  step "I am logged in with a service manager"
+  upload_pupil_census_page.load
+  step 'I decide to remove the file' if upload_pupil_census_page.uploaded_file.has_remove?
 end
 
 Before("@remove_all_groups") do

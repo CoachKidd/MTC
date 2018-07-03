@@ -19,6 +19,7 @@ When(/^I go from the instructions page to the complete page$/) do
   warm_up_page.start_now.click
   step "I complete the warm up questions using the numpad"
   warm_up_complete_page.start_check.click
+  mtc_check_start_page.start_now.click
   questions = JSON.parse page.evaluate_script('window.localStorage.getItem("questions");')
   @answers = check_page.complete_check_with_correct_answers(questions.size,'numpad')
   complete_page.wait_for_complete_page
@@ -49,7 +50,7 @@ Then(/^the app counter should be set to (\d+)$/) do |count|
 end
 
 Given(/^I have refreshed a page during the check$/) do
-  step 'I am on question 5 of the check'
+  step 'I am on question 1 of the check'
   step 'I attempt to refresh the page'
   step 'the next question has loaded so I continue with the check'
   check_code = JSON.parse(page.evaluate_script('window.localStorage.getItem("pupil");'))['checkCode']

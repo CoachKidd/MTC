@@ -15,6 +15,7 @@ class RestartsPage < SitePrism::Page
   element :deselct_all_pupil, '#tickAllCheckboxes', text: 'Deselect all'
   element :back_to_top, 'a', text: 'Back to top'
   element :flash_message, '.info-message'
+  element :csrf, 'input[name="_csrf"]', visible: false
 
   section :pupil_list, '#pupilsRestartList tbody' do
     sections :rows, 'tr' do
@@ -46,7 +47,7 @@ class RestartsPage < SitePrism::Page
     element :did_not_complete, 'strong', text: 'Did not complete'
   end
 
-  section :error_summary, '.error-summary' do
+  section :error_summary, 'div[aria-labelledby="error-summary-heading-1"]' do
     element :error_heading, '#error-summary-heading-1', text: 'You need to fix the errors on this page before continuing'
     element :error_info, 'p', text: 'See highlighted errors below'
     element :error_text, 'ul li a', text: 'Enter an explanation'

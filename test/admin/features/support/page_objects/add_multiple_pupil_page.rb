@@ -8,8 +8,9 @@ class AddMultiplePupilPage < SitePrism::Page
   element :chose_file, '#file-upload'
   element :save, 'input[value="Upload"]'
   element :back, 'a.button.button-secondary'
-  element :error_message, '.error-summary'
+  element :error_message, 'div[aria-labelledby="error-summary-heading-1"]'
   element :error_csv_file, '.error-summary .template-link'
+  element :csrf, 'input[name="_csrf"]', visible: false
 
 
   def upload_multiple_pupil(pupil_array1, pupil_array2=nil)

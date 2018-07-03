@@ -49,6 +49,7 @@ Given(/^I am on question (.*) of the check$/) do |number|
   @question_strings = create_question_strings(JSON.parse(page.evaluate_script('window.localStorage.getItem("questions");')))
   step "I complete the warm up questions using the numpad"
   warm_up_complete_page.start_check.click
+  mtc_check_start_page.start_now.click
   check_page.wait_for_question
   check_page.wait_for_answer
   check_page.complete_check_with_correct_answers((@number-1), 'numpad') until check_page.question.text == @question_strings[@number -1]
@@ -66,7 +67,7 @@ But(/^the next question has loaded so I continue with the check$/) do
 end
 
 Then(/^the audit and inputs recorded should reflect this$/) do
-  refresh_audit_index = 24
+  refresh_audit_index = 25
   question_index = @number - 1
   audit_location_index = (question_index * 5) + refresh_audit_index
   expect(JSON.parse(page.evaluate_script('window.localStorage.getItem("audit");'))[audit_location_index]['type']).to eql 'RefreshDetected'
@@ -76,4 +77,33 @@ end
 Then(/^I should remain on the complete page$/) do
   step 'I should see a complete page heading'
   step 'I should see some text stating i have completed the check'
+end
+
+
+Given(/^I have refreshed on every question page$/) do
+  step 'I have logged in'
+  confirmation_page.read_instructions.click
+  start_page.start_warm_up.click
+  warm_up_page.start_now.click
+  @question_strings = create_question_strings(JSON.parse(page.evaluate_script('window.localStorage.getItem("questions");')))
+  step "I complete the warm up questions using the numpad"
+  warm_up_complete_page.start_check.click
+  mtc_check_start_page.start_now.click
+  @array_of_questions = []
+  @question_strings.size.times do
+    check_page.wait_for_question
+    @array_of_questions << check_page.question.text
+    visit current_url
+  end
+  complete_page.wait_for_complete_page
+end
+
+Then(/^I should see the complete page after seeing all the questions$/) do
+  expect(complete_page).to be_displayed
+  expect(@array_of_questions).to eql @question_strings
+end
+
+And(/^audit and inputs recorded should reflect this$/) do
+  local_storage = JSON.parse(page.evaluate_script('window.localStorage.getItem("audit");'))
+  expect(local_storage.select {|a| a['type'] == 'RefreshDetected'}.count).to eql @array_of_questions.size
 end

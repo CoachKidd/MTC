@@ -9,6 +9,7 @@
 
 <div class="grid-row" id="select-pupils-restart" aria-describedby="heading-xlarge">
     <form method="post" action="/restart/submit-restart-list" autocomplete="off">
+        <input type="hidden" name="_csrf" value="<%= csrftoken %>" />
         <div class="column-two-thirds">
             <% if (error.hasError()) { %>
             <div class="error-summary" role="group" aria-labelledby="error-summary-heading-1">
@@ -23,6 +24,9 @@
             <% } %>
 
             <h1 class="heading-xlarge" id="heading-xlarge">Select pupils for restart</h1>
+
+            <%- partial('partials/_session_expiry') %>
+
             <br />
             <h2>1. Select reason for restart</h2>
             <div class="form-group">

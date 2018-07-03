@@ -11,6 +11,8 @@
     <div class="column-two-thirds">
         <h1 class="heading-xlarge">Attendance register</h1>
 
+        <%- partial('partials/_session_expiry') %>
+
         <div class="panel panel-border-wide">
             <p id="intro-paragraph" aria-labelledby="intro-paragraph">Your school’s trial will close when you submit the attendance register.<br>
                 You can only submit this form once.</p>
@@ -33,6 +35,7 @@
     <div class="column-two-thirds">
         <% if (pupils.some((p) => p.hasScore)) { %>
         <form method="post" action="/school/submit-attendance-form" autocomplete="off">
+            <input type="hidden" name="_csrf" value="<%= csrftoken %>" />
             <div class="form-group form-horizontal">
                 <input class="button" type="submit" value="Submit">
             </div>

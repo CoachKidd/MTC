@@ -14,6 +14,7 @@ import { QuestionServiceMock } from '../services/question/question.service.mock'
 import { UserService } from '../services/user/user.service';
 import { AuditService } from '../services/audit/audit.service';
 import { AppUsageService } from '../services/app-usage/app-usage.service';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
 
 describe('LoginSuccessComponent', () => {
   let component: LoginSuccessComponent;
@@ -30,6 +31,7 @@ describe('LoginSuccessComponent', () => {
 
     const injector = TestBed.configureTestingModule({
       imports: [HttpModule],
+      schemas: [ NO_ERRORS_SCHEMA ], // we don't need to test sub-components
       declarations: [LoginSuccessComponent],
       providers: [
         DeviceService,
@@ -74,7 +76,7 @@ describe('LoginSuccessComponent', () => {
 
   it('asks the user to confirm their details', () => {
     const compiled = fixture.debugElement.nativeElement;
-    expect(compiled.querySelector('p.lede').textContent).toMatch(/Check your details are correct/);
+    expect(compiled.querySelector('p.lede').textContent).toMatch(/If this is you, please confirm/);
   });
 
   it('redirects to warm up introduction page and removes pupil data', () => {

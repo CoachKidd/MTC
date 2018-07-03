@@ -1,11 +1,17 @@
 'use strict'
 
+const moment = require('moment')
 const path = require('path')
 const fs = require('fs-extra')
+const R = require('ramda')
 const checkFormService = require('../services/check-form.service')
+const checkProcessingService = require('../services/check-processing.service')
 const checkWindowService = require('../services/check-window.service')
 const checkWindowDataService = require('../services/data-access/check-window.data.service')
+const dateService = require('../services/date.service')
 const sortingAttributesService = require('../services/sorting-attributes.service')
+const psychometricianReportService = require('../services/psychometrician-report.service')
+const anomalyReportService = require('../services/anomaly-report.service')
 const winston = require('winston')
 
 /**
@@ -118,21 +124,33 @@ const saveCheckForm = async (req, res, next) => {
 
   let uploadError = {}
   let uploadFile = req.files.csvFile
-  let checkForm = {}
   let absFile
   let deleteDir
   let fileName
 
   // Various errors cause a page to be rendered instead, and it *needs* a title
-  if (!(uploadFile && path.extname(uploadFile.filename.toLowerCase()) === '.csv')) {
-    // Either it actually wasn't uploaded, or it failed one the busboy checks: e.g.
-    // * mime-type needs to be text/csv (.csv)
-    // * uploaded from the wrong path
-    // * file size exceeded?
-    uploadError.message = 'A valid CSV file was not uploaded'
-    uploadError.errors = {}
-    uploadError.errors['csvFile'] = new Error(uploadError.message)
+  uploadError.message = 'A valid CSV file was not uploaded'
+  uploadError.errors = {}
+  uploadError.errors['csvFile'] = new Error(uploadError.message)
 
+  // Either it actually wasn't uploaded, or it failed one the busboy checks: e.g.
+  // * mime-type needs to be text/csv (.csv)
+  // * uploaded from the wrong path
+  // * file size exceeded?
+  if (!uploadFile) {
+    return res.render('test-developer/upload-new-form', {
+      error: uploadError,
+      breadcrumbs: req.breadcrumbs()
+    })
+  }
+
+  // Convert single uploaded file to an array
+  if (!Array.isArray(uploadFile)) {
+    uploadFile = [uploadFile]
+  }
+
+  // If a non-csv file was uploaded, fail with error
+  if (!R.all((file) => path.extname(file.filename.toLowerCase()) === '.csv', uploadFile)) {
     return res.render('test-developer/upload-new-form', {
       error: uploadError,
       breadcrumbs: req.breadcrumbs()
@@ -140,66 +158,77 @@ const saveCheckForm = async (req, res, next) => {
   }
 
   /**
-   * uploadfile is an object:
+   * uploadFile is an array of objects like:
    *
-   { uuid: 'ff6c17d9-84d0-4a9b-a3c4-3f94a6ccdc40',
+   [ { uuid: 'ff6c17d9-84d0-4a9b-a3c4-3f94a6ccdc40',
      field: 'uploadFile',
      file: 'data/files/ff6c17d9-84d0-4a9b-a3c4-3f94a6ccdc40/uploadFile/form-1.csv',
      filename: 'form-1.csv',
      encoding: '7bit',
      mimetype: 'text/csv',
      truncated: false,
-     done: true } }
+     done: true } ]
    */
 
-  absFile = path.join(__dirname, '/../', uploadFile.file)
-  deleteDir = path.dirname(path.dirname(absFile))
+  let checkForms = []
+  for (let i = 0; i < uploadFile.length; i++) {
+    let checkForm = {}
+    absFile = path.join(__dirname, '/../', uploadFile[i].file)
+    deleteDir = path.dirname(path.dirname(absFile))
 
-  try {
-    await checkFormService.populateFromFile(checkForm, absFile)
-  } catch (error) {
+    try {
+      await checkFormService.populateFromFile(checkForm, absFile)
+    } catch (error) {
+      fs.remove(deleteDir, err => {
+        if (err) winston.error(err.message)
+      })
+      return res.render('test-developer/upload-new-form', {
+        error: new Error(`There is a problem with the form content - ${uploadFile[i].filename}`),
+        breadcrumbs: req.breadcrumbs()
+      })
+    }
+
+    try {
+      fileName = await checkFormService.buildFormName(uploadFile[i].filename)
+      if (!fileName) {
+        req.flash('error', `Select a file with no more than 128 characters in name - ${uploadFile[i].filename.slice(0, -4)}`)
+        return res.redirect('/test-developer/upload-new-form')
+      }
+    } catch (error) {
+      return next(new Error(`File name should be between 1 and 128 characters - ${uploadFile[i].filename.slice(0, -4)}`))
+    }
+
+    try {
+      const isFileNameValid = await checkFormService.validateCheckFormName(fileName)
+      if (!isFileNameValid) {
+        req.flash('error', `'${fileName}' already exists. Rename and upload again.`)
+        return res.redirect('/test-developer/upload-new-form')
+      }
+      checkForm.name = fileName
+    } catch (error) {
+      return next(new Error(`Error trying to find form with name ${uploadFile[i].filename.slice(0, -4)}`))
+    }
+
+    checkForms.push(checkForm)
+
     fs.remove(deleteDir, err => {
       if (err) winston.error(err.message)
     })
-    return res.render('test-developer/upload-new-form', {
-      error: new Error('There is a problem with the form content'),
-      breadcrumbs: req.breadcrumbs()
-    })
   }
 
-  try {
-    fileName = await checkFormService.buildFormName(uploadFile.filename)
-    if (!fileName) {
-      req.flash('error', `Select a file with no more than 128 characters in name`)
-      return res.redirect('/test-developer/upload-new-form')
+  let infoMessages = []
+  let errorMessages = []
+  for (let i = 0; i < checkForms.length; i++) {
+    try {
+      await checkFormService.create(checkForms[i])
+      infoMessages.push({ message: `New form uploaded - ${checkForms[i].name}`, formName: checkForms[i].name })
+    } catch (error) {
+      errorMessages.push({ error, formName: checkForms[i].name })
     }
-  } catch (error) {
-    return next(new Error(`File name should be between 1 and 128 characters - ${uploadFile.filename.slice(0, -4)}`))
   }
 
-  try {
-    const isFileNameValid = await checkFormService.validateCheckFormName(fileName)
-    if (!isFileNameValid) {
-      req.flash('error', `'${fileName}' already exists. Rename and upload again.`)
-      return res.redirect('/test-developer/upload-new-form')
-    }
-    checkForm.name = fileName
-  } catch (error) {
-    return next(new Error(`Error trying to find form with name ${uploadFile.filename.slice(0, -4)}`))
-  }
-
-  fs.remove(deleteDir, err => {
-    if (err) winston.error(err.message)
-  })
-
-  try {
-    await checkFormService.create(checkForm)
-    req.flash('info', 'New form uploaded')
-    req.flash('formName', checkForm.name)
-  } catch (error) {
-    return next(error)
-  }
-
+  if (infoMessages.length > 0) req.flash('info', infoMessages)
+  if (errorMessages.length > 0) req.flash('errors', errorMessages)
   res.redirect('/test-developer/upload-and-view-forms')
 }
 
@@ -237,7 +266,7 @@ const displayCheckForm = async (req, res) => {
     formData.checkWindowNames = checkFormService.checkWindowNames(checkWindows)
     formData.canDelete = checkFormService.canDelete(checkWindows)
   }
-
+  res.locals.pageTitle = formData && formData.name
   req.breadcrumbs(res.locals.pageTitle)
   res.render('test-developer/view-check-form', {
     form: formData,
@@ -265,7 +294,7 @@ const assignCheckFormsToWindowsPage = async (req, res, next) => {
   }
 
   try {
-    checkWindowsData = await checkWindowService.getCurrentCheckWindowsAndCountForms()
+    checkWindowsData = await checkWindowService.getFutureCheckWindowsAndCountForms()
   } catch (error) {
     return next(error)
   }
@@ -298,10 +327,14 @@ const assignCheckFormToWindowPage = async (req, res, next) => {
     return next(error)
   }
 
-  try {
-    checkFormsList = await checkFormService.getUnassignedFormsForCheckWindow(checkWindow.id)
-  } catch (error) {
-    return next(error)
+  if (moment().isBefore(checkWindow.checkStartDate)) {
+    try {
+      checkFormsList = await checkFormService.getUnassignedFormsForCheckWindow(checkWindow.id)
+    } catch (error) {
+      return next(error)
+    }
+  } else {
+    checkFormsList = []
   }
 
   req.breadcrumbs('Assign forms to check windows', '/test-developer/assign-form-to-window')
@@ -433,7 +466,99 @@ const unassignCheckFormFromWindow = async (req, res, next) => {
   res.redirect('/test-developer/assign-form-to-window')
 }
 
+/**
+ * Download pupil check data view.
+ * @param req
+ * @param res
+ * @param next
+ * @returns {Promise.<void>}
+ */
+const getDownloadPupilCheckData = async (req, res, next) => {
+  res.locals.pageTitle = 'Download pupil check data'
+  req.breadcrumbs(res.locals.pageTitle)
+
+  let psychometricianReport
+  try {
+    psychometricianReport = await psychometricianReportService.getUploadedFile()
+  } catch (error) {
+    return next(error)
+  }
+
+  if (psychometricianReport) {
+    psychometricianReport.fileName = psychometricianReport.fileName.replace(/\.zip$/, '')
+    psychometricianReport.dateGenerated = dateService.formatDateAndTime(psychometricianReport.dateGenerated)
+  }
+
+  res.render('test-developer/download-pupil-check-data', {
+    breadcrumbs: req.breadcrumbs(),
+    psychometricianReport
+  })
+}
+
+/**
+ * Download pupil check data ZIP file.
+ * @param req
+ * @param res
+ * @param next
+ * @returns {Promise.<void>}
+ */
+const getFileDownloadPupilCheckData = async (req, res, next) => {
+  let psychometricianReport
+  try {
+    psychometricianReport = await psychometricianReportService.getUploadedFile()
+    if (!psychometricianReport) {
+      return res.redirect('/test-developer/download-pupil-check-data')
+    }
+  } catch (error) {
+    req.flash('error', error.message)
+    return res.redirect('/test-developer/download-pupil-check-data')
+  }
+
+  try {
+    res.setHeader('Content-type', 'application/zip')
+    res.setHeader('Content-disposition', `attachment; filename=${psychometricianReport.fileName}`)
+
+    await psychometricianReportService.downloadUploadedFile(psychometricianReport.remoteFilename, res)
+  } catch (error) {
+    return next(error)
+  }
+}
+
+/**
+ * Generate latest pupil check data.
+ * @param req
+ * @param res
+ * @param next
+ * @returns {Promise.<void>}
+ */
+const getGenerateLatestPupilCheckData = async (req, res, next) => {
+  req.setTimeout(5 * 1000 * 60) // 5 minutes
+
+  try {
+    await checkProcessingService.process()
+
+    const dateGenerated = moment()
+    const psychometricianReport = await psychometricianReportService.generateReport()
+    const anomalyReport = await anomalyReportService.generateReport()
+
+    const generatedZip = await psychometricianReportService.generateZip(psychometricianReport, anomalyReport, dateGenerated)
+    const blobResult = await psychometricianReportService.uploadToBlobStorage(generatedZip)
+
+    const fileName = await psychometricianReportService.create(blobResult, dateGenerated)
+
+    return res.status(200).json({
+      fileName: fileName.replace(/\.zip$/, ''),
+      dateGenerated: dateService.formatDateAndTime(dateGenerated)
+    })
+  } catch (error) {
+    return res.status(500).json({ error: error.message })
+  }
+}
+
 module.exports = {
+  getDownloadPupilCheckData,
+  getFileDownloadPupilCheckData,
+  getGenerateLatestPupilCheckData,
   getTestDeveloperHomePage,
   uploadAndViewFormsPage,
   removeCheckForm,
