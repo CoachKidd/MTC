@@ -1,19 +1,113 @@
 'use strict'
+const archiver = require('archiver')
 const csv = require('fast-csv')
 const R = require('ramda')
 const moment = require('moment')
+const uuidv4 = require('uuid/v4')
 
-// const checkWindowDataService = require('./data-access/check-window.data.service')
 const answerDataService = require('../services/data-access/answer.data.service')
+const azureFileDataService = require('./data-access/azure-file.data.service')
 const checkFormService = require('./check-form.service')
 const completedCheckDataService = require('./data-access/completed-check.data.service')
+const config = require('../config')
 const dateService = require('./date.service')
+const jobDataService = require('./data-access/job.data.service')
+const jobStatusDataService = require('./data-access/job-status.data.service')
+const jobTypeDataService = require('./data-access/job-type.data.service')
 const psUtilService = require('./psychometrician-util.service')
+const psychometricianDataService = require('./data-access/psychometrician.data.service')
 const psychometricianReportCacheDataService = require('./data-access/psychometrician-report-cache.data.service')
-const pupilDataService = require('./data-access/pupil.data.service')
 const schoolDataService = require('./data-access/school.data.service')
 
 const psychometricianReportService = {}
+const psychometricianReportMaxSizeFileUploadMb = config.Data.psychometricianReportMaxSizeFileUploadMb
+
+/**
+ * Creates a new psychometricianReport record
+ * @param {Object} blobResult
+ * @param {Object} dateGenerated
+ * @return {Object}
+ */
+psychometricianReportService.create = async (blobResult, dateGenerated) => {
+  let dataInput = []
+  const fileName = `Pupil check data ${dateGenerated.format('YYYY-MM-DD HH.mm.ss')}.zip`
+  const blobFileName = blobResult && blobResult.name
+  dataInput.push(fileName, blobFileName, dateGenerated)
+  dataInput = JSON.stringify(dataInput.join(','))
+  const jobType = await jobTypeDataService.sqlFindOneByTypeCode('PSY')
+  const jobStatus = await jobStatusDataService.sqlFindOneByTypeCode('SUB')
+  const psychometricianReportRecord = {
+    jobInput: dataInput,
+    jobType_id: jobType.id,
+    jobStatus_id: jobStatus.id
+  }
+  await jobDataService.sqlCreate(psychometricianReportRecord)
+  return fileName
+}
+
+/**
+ * Creates a zip with the psychometricianReport and anomalyReport
+ * @param {Object} psychometricianReport
+ * @param {Object} anomalyReport
+ * @param {Date} dateGenerated
+ * @return {Object}
+ */
+psychometricianReportService.generateZip = async (psychometricianReport, anomalyReport, dateGenerated) => {
+  const archive = archiver('zip')
+
+  // collect data from the zip stream since uploadBlobToStorage receives the entire blob
+  const zipStreamChunks = []
+  archive.on('data', (chunk) => {
+    zipStreamChunks.push(chunk)
+  })
+
+  archive.append(psychometricianReport, { name: `Pupil check data ${dateGenerated.format('YYYY-MM-DD HH.mm.ss')}.csv` })
+  archive.append(anomalyReport, { name: `Anomaly Report ${dateGenerated.format('YYYY-MM-DD HH.mm.ss')}.csv` })
+
+  await archive.finalize()
+
+  return Buffer.concat(zipStreamChunks)
+}
+
+/**
+ * Upload stream to Blob Storage
+ * @param uploadStream
+ * @return {Promise<void>}
+ */
+psychometricianReportService.uploadToBlobStorage = async (uploadStream) => {
+  const streamLength = psychometricianReportMaxSizeFileUploadMb
+  const remoteFilename = `${uuidv4()}_${moment().format('YYYYMMDDHHmmss')}.zip`
+  return azureFileDataService.azureUploadFile('psychometricianreportupload', remoteFilename, uploadStream, streamLength)
+}
+
+/**
+ * Get existing psychometrician report file
+ * @return {Object}
+ */
+psychometricianReportService.getUploadedFile = async () => {
+  const jobType = await jobTypeDataService.sqlFindOneByTypeCode('PSY')
+  const psychometricianReport = await jobDataService.sqlFindLatestByTypeId(jobType.id)
+  if (!psychometricianReport) return
+  const jobStatusId = psychometricianReport.jobStatus_id
+  if (!jobStatusId) {
+    throw new Error('Psychometrician report record does not have a job status reference')
+  }
+  const jobStatus = await jobStatusDataService.sqlFindOneById(jobStatusId)
+  const dataInput = psychometricianReport.jobInput && JSON.parse(psychometricianReport.jobInput).split(',')
+  psychometricianReport.jobStatus = jobStatus && jobStatus.description
+  psychometricianReport.fileName = dataInput[0]
+  psychometricianReport.remoteFilename = dataInput[1]
+  psychometricianReport.dateGenerated = dataInput[2]
+  return psychometricianReport
+}
+
+/**
+ * Get existing psychometrician report file
+ * @return {Object}
+ */
+psychometricianReportService.downloadUploadedFile = async (remoteFilename, stream) => {
+  return azureFileDataService.azureDownloadFileStream('psychometricianreportupload', remoteFilename, stream)
+}
 
 /**
  * Return the CSV file as a string
@@ -82,7 +176,7 @@ psychometricianReportService.batchProduceCacheData = async function (batchIds) {
 
   // Fetch all pupils, checkForms, checkWindows or the checks
   const pupilIds = checks.map(x => x.pupil_id)
-  const pupils = await pupilDataService.sqlFindByIds(pupilIds)
+  const pupils = await psychometricianDataService.sqlFindPupilsByIds(pupilIds) // test-developer all-pupil access
   const checkForms = await checkFormService.getCheckFormsByIds(checks.map(x => x.checkForm_id))
   const schools = await schoolDataService.sqlFindByIds(pupils.map(x => x.school_id))
 
@@ -130,6 +224,8 @@ psychometricianReportService.batchProduceCacheData = async function (batchIds) {
 psychometricianReportService.produceReportData = function (check, markedAnswers, pupil, checkForm, school) {
   const userAgent = R.path(['data', 'device', 'navigator', 'userAgent'], check)
   const config = R.path(['data', 'config'], check)
+  const deviceOptions = R.path(['data', 'device'], check)
+  const { type, model } = psUtilService.getDeviceTypeAndModel(userAgent)
 
   const psData = {
     'DOB': dateService.formatUKDate(pupil.dateOfBirth),
@@ -143,7 +239,9 @@ psychometricianReportService.produceReportData = function (check, markedAnswers,
     'PauseLength': R.pathOr('', ['loadingTime'], config),
     'SpeechSynthesis': R.pathOr('', ['speechSynthesis'], config),
 
-    'DeviceType': psUtilService.getDevice(userAgent),
+    'DeviceType': type,
+    'DeviceTypeModel': model,
+    'DeviceId': psUtilService.getDeviceId(deviceOptions),
     'BrowserType': psUtilService.getBrowser(userAgent),
 
     'School Name': school.name,
@@ -206,6 +304,8 @@ psychometricianReportService.produceReportData = function (check, markedAnswers,
  * @returns {Array}
  */
 psychometricianReportService.produceReportDataHeaders = function (results) {
+  // If there are no checks, there will be an empty file
+  if (results.length === 0) return []
   // Fetch the first completed check to store the keys as headers
   const completedCheck = results.find(c => c.jsonData.hasOwnProperty('Q1ID'))
   if (completedCheck) {

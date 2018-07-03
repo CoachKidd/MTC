@@ -30,6 +30,9 @@
         <% } %>
 
         <h1 class="heading-xlarge">Group pupils</h1>
+
+        <%- partial('partials/_session_expiry') %>
+
         <p class="lede" id="lead-paragraph">
             Organise pupils into groups if you are planning to administer the check to smaller cohorts.
         </p>
@@ -91,10 +94,10 @@
                         <a href="<%- guidancePdf %>" target="_blank" rel="noopener noreferrer">Guidance</a>
                     </li>
                     <li>
-                        <a href="#">Pupil register</a>
+                        <a href="/pupil-register/pupils-list/name/asc">Pupil register</a>
                     </li>
                     <li>
-                        <a href="#">Generate pupil PINs</a>
+                        <a href="/pupil-pin/generate-pins-overview">Generate pupil PINs</a>
                     </li>
                 </ul>
             </nav>

@@ -21,6 +21,9 @@
         <header class="page-header">
             <h1 class="heading-xlarge">Generate pupil PINs</h1>
         </header>
+
+        <%- partial('partials/_session_expiry') %>
+
         <br />
         Pupils will need a Personal Identification Number (PIN) and school password in order to start the check. These expire daily.
     </div>
@@ -33,10 +36,10 @@
                         <a href="<%- guidancePdf %>" target="_blank" rel="noopener noreferrer">Guidance</a>
                     </li>
                     <li>
-                        <a href="" >Group pupils</a>
+                        <a href="/group/pupils-list" >Group pupils</a>
                     </li>
                     <li>
-                        <a href="" >Restarts</a>
+                        <a href="/restart/overview" >Restarts</a>
                     </li>
                 </ul>
             </nav>

@@ -5,6 +5,11 @@ class GeneratePinsOverviewPage < SitePrism::Page
   element :generate_pin_message, '.column-two-thirds', text: 'Pupils will need a Personal Identification Number (PIN) and school password in order to start the check. These expire daily.'
   elements :info_message, '.list-number li'
   element :generate_pin_btn, 'input[value="Generate PINs"]'
+  element :related_heading, ".heading-medium", text: 'Related'
+  element :guidance, "a[href='/pdfs/mtc-administration-guidance-2018-03-3.pdf']", text: 'Guidance'
+  element :group_pupil, "a[href='/group/pupils-list']", text: 'Group pupils'
+  element :restarts, "a[href='/restart/overview']", text: 'Restarts'
+  element :csrf, 'input[name="_csrf"]', visible: false
 
   section :group_filter, GroupFilter, '.column-two-thirds'
 
@@ -22,7 +27,7 @@ class GeneratePinsOverviewPage < SitePrism::Page
 
   section :sticky_banner, StickyBannerSection, '.sticky-banner-wrapper'
 
-  section :error_summary, '.error-summary' do
+  section :error_summary, 'div[aria-labelledby="error-summary-heading-1"]' do
     element :error_heading, '#error-summary-heading-1', text: 'Unable to proceed. Error: SM01. Please contact helpdesk'
     element :error_info, 'p', text: 'Multiplication tables check helpline'
   end
