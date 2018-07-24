@@ -12,13 +12,10 @@ const sqlService = require('./sql.service')
 /**
  * Fetch all pupils for a school by dfeNumber sorted by specific column.
  * @param dfeNumber
- * @param sortDirection
  * @returns {Promise<*>}
  */
-pupilDataService.sqlFindPupilsByDfeNumber = async function (dfeNumber, sortDirection) {
+pupilDataService.sqlFindPupilsByDfeNumber = async function (dfeNumber) {
   const paramDfeNumber = { name: 'dfeNumber', type: TYPES.Int, value: dfeNumber }
-  sortDirection = sortDirection === 'asc' ? 'asc' : 'desc'
-  const sortBy = `lastName ${sortDirection}, foreName ${sortDirection}, middleNames ${sortDirection}, dateOfBirth ${sortDirection}`
 
   const sql = `
       SELECT p.*, g.group_id 
@@ -26,7 +23,7 @@ pupilDataService.sqlFindPupilsByDfeNumber = async function (dfeNumber, sortDirec
       INNER JOIN school s ON s.id = p.school_id
       LEFT JOIN ${sqlService.adminSchema}.[pupilGroup] g ON p.id = g.pupil_id
       WHERE s.dfeNumber = @dfeNumber
-      ORDER BY ${sortBy}      
+      ORDER BY lastName asc      
     `
   return sqlService.query(sql, [paramDfeNumber])
 }
@@ -160,19 +157,22 @@ pupilDataService.sqlCreate = async (data) => {
 }
 
 /**
- * Find pupils for a school with pins that have not yet expired
+ * Find pupils for a school with pins that have not yet expired, for
+ * a specific pin environment (live / fam)
  * @param dfeNumber
+ * @param pinEnv
  * @return {Promise<*>}
  */
-pupilDataService.sqlFindPupilsWithActivePins = async (dfeNumber) => {
+pupilDataService.sqlFindPupilsWithActivePins = async (dfeNumber, pinEnv) => {
+  // TODO: use pinEnv to differentiate between live and familiarisation
   const paramDfeNumber = { name: 'dfeNumber', type: TYPES.Int, value: dfeNumber }
   const sql = `
-  SELECT p.*, g.group_id 
-  FROM ${sqlService.adminSchema}.${table} p 
+  SELECT p.*, g.group_id
+  FROM ${sqlService.adminSchema}.${table} p
   INNER JOIN ${sqlService.adminSchema}.[school] s
     ON p.school_id = s.id
   LEFT JOIN  ${sqlService.adminSchema}.[pupilGroup] g
-    ON g.pupil_id = p.id 
+    ON g.pupil_id = p.id
   WHERE p.pin IS NOT NULL
   AND s.dfeNumber = @dfeNumber
   AND p.pinExpiresAt IS NOT NULL
@@ -256,16 +256,18 @@ pupilDataService.sqlFindByIdAndDfeNumber = async function (ids, dfeNumber) {
 }
 
 /**
- * Batch update pupil pins
+ * Batch update pupil pins for specific pin env (live/fam)
  * @param pupils
+ * @param pinEnv
  * @return {Promise<void>}
  */
-pupilDataService.sqlUpdatePinsBatch = async (pupils) => {
+pupilDataService.sqlUpdatePinsBatch = async (pupils, pinEnv = 'live') => {
+  // TODO: use pinEnv to differentiate between the live and familiarisation checks
   const params = []
   const update = []
   pupils.forEach((p, i) => {
-    update.push(`UPDATE ${sqlService.adminSchema}.${table} 
-    SET pin = @pin${i}, pinExpiresAt=@pinExpiredAt${i} 
+    update.push(`UPDATE ${sqlService.adminSchema}.${table}
+    SET pin = @pin${i}, pinExpiresAt=@pinExpiredAt${i}
     WHERE id = @id${i}`)
     params.push({
       name: `pin${i}`,

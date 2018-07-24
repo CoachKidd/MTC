@@ -3,8 +3,8 @@ const csv = require('fast-csv')
 const R = require('ramda')
 const moment = require('moment')
 const useragent = require('useragent')
+const winston = require('winston')
 
-const checkFormDataService = require('./data-access/check-form.data.service')
 const completedCheckDataService = require('./data-access/completed-check.data.service')
 const anomalyReportCacheDataService = require('./data-access/anomaly-report-cache.data.service')
 const dateService = require('./date.service')
@@ -53,20 +53,16 @@ anomalyReportService.batchProduceCacheData = async (batchIds) => {
     throw new Error('Invalid arg: batchIds')
   }
 
-  const checks = await completedCheckDataService.sqlFindByIds(batchIds)
+  const checksWithForms = await completedCheckDataService.sqlFindByIdsWithForms(batchIds)
 
-  if (!checks || !Array.isArray(checks) || !checks.length) {
+  if (!checksWithForms || !Array.isArray(checksWithForms) || !checksWithForms.length) {
     throw new Error('Failed to find any checks')
   }
 
-  const checkFormIds = checks.map(check => check.checkForm_id)
-  const checkForms = await checkFormDataService.sqlFindByIds(checkFormIds)
-  checks.forEach(check => {
-    const checkForm = checkForms.find(checkForm => checkForm.id === check.checkForm_id)
-    anomalyReportService.detectAnomalies(check, checkForm)
+  checksWithForms.forEach(checkWithForm => {
+    anomalyReportService.detectAnomalies(checkWithForm)
   })
 
-  // return anomalyReportService.reportedAnomalies
   await anomalyReportCacheDataService.sqlInsertMany(anomalyReportService.reportedAnomalies)
 }
 
@@ -120,9 +116,9 @@ anomalyReportService.produceReportDataHeaders = () => {
   return reportHeaders
 }
 
-anomalyReportService.detectAnomalies = (check, checkForm) => {
+anomalyReportService.detectAnomalies = (check) => {
   anomalyReportService.detectWrongNumberOfAnswers(check)
-  anomalyReportService.detectAnswersCorrespondToQuestions(check, checkForm)
+  anomalyReportService.detectAnswersCorrespondToQuestions(check)
   anomalyReportService.detectPageRefresh(check)
   anomalyReportService.detectInputBeforeOrAfterTheQuestionIsShown(check)
   anomalyReportService.detectMissingAudits(check)
@@ -329,9 +325,9 @@ anomalyReportService.detectInputThatDoesNotCorrespondToAnswers = (check) => {
   })
 }
 
-anomalyReportService.detectAnswersCorrespondToQuestions = (check, checkForm) => {
+anomalyReportService.detectAnswersCorrespondToQuestions = (check) => {
   const answerFactors = check.data.answers.map(answer => ({ f1: answer.factor1, f2: answer.factor2 }))
-  const formData = JSON.parse(checkForm.formData)
+  const formData = JSON.parse(check.formData)
   const difference = R.difference(answerFactors, formData)
   if (difference.length > 0) {
     anomalyReportService.produceReportData(check, 'Answers factors do not correspond to the questions factors', difference.length, 0)
@@ -344,6 +340,10 @@ anomalyReportService.reconstructAnswerFromInputs = (events) => {
     return ans
   }
   events.forEach(event => {
+    if (event === null || event === undefined) {
+      winston.info('anomalyReportService.reconstructAnswerFromInputs: event is empty')
+      return
+    }
     if (event.eventType !== 'click' && event.eventType !== 'keydown') {
       return
     }
